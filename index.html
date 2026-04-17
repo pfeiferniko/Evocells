@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evolutions-Simulation</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="game-container">
+    <canvas id="simulationCanvas" width="2000" height="1000"></canvas>
+</div>
+
+<button id="impressum-btn">Impressum</button>
+
+<div id="impressum-modal" class="hidden">
+    <div class="modal-content">
+        <span id="close-btn">&times;</span>
+        <h2>Impressum</h2>
+        <p>Angaben gemäß § 5 DDG</p>
+        <p>
+            <strong>Niko Pfeifer</strong><br>
+            Brandaustraße 29<br>
+            12277 Berlin
+        </p>
+        <h3>Kontakt</h3>
+        <p>
+            Telefon: +49 (0) 171 2188051<br>
+            E-Mail: pfeifer.niko@gmail.com
+        </p>
+    </div>
+</div>
+
+<script defer src="js/grid.js"></script>
+<script defer src="js/cell.js"></script>
+<script defer src="js/main.js"></script>
+</body>
+</html>
