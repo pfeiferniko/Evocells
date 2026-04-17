@@ -101,23 +101,50 @@ class AnimalCell extends BaseCell {
     updateBase(grid) {
         this.age++;
         if (this.speedMultiplier < 1.0) this.speedMultiplier += 0.001;
-        // HIER ANGEPASST: Wir prüfen jetzt gegen this.getMaxEnergy() anstatt this.genome.maxEnergy
+
+        // Check, ob die Zelle bereit ist
         if (this.energy >= this.getMaxEnergy() && this.age > this.genome.minAgeForReproduction && !this.reproducing) {
             this.reproducing = true;
+            this.reproTimer = 0;
         }
 
-        this.energy -= (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
+        // Der Geburtstanz & Spawnen
         if (this.reproducing) {
             this.reproTimer++;
-            if (this.reproTimer > 100) {
+            const reproFrames = 120; // 1 Sekunde Tanz
+
+            // 1. Drehung für den Tanz
+            this.angle += (Math.PI * 4) / reproFrames;
+
+            // 2. NEU: Im Kreis schwimmen!
+            // Wir schieben die Zelle jeden Frame in ihre aktuelle Blickrichtung.
+            // Ein Wert von 3 oder 4 sorgt für einen schönen, sichtbaren Kreis.
+            const danceSpeed = 1.5;
+            this.x += Math.cos(this.angle) * danceSpeed;
+            this.y += Math.sin(this.angle) * danceSpeed;
+
+            // Wenn der Timer abgelaufen ist: EINMALIG Kind spawnen und resetten
+            if (this.reproTimer >= reproFrames) {
+
+                // Winkel normalisieren, damit sie danach nicht verwirrt ist
+                this.angle = this.angle % (Math.PI * 2);
+
                 this.energy /= 2;
                 this.reproducing = false;
-                this.reproTimer = 0;
                 this.hasReproduced = true;
+                this.reproTimer = 0;
+
                 return 'reproduce';
             }
+
+            // 'stationary' verhindert die normale Jagd/Wegfindung,
+            // aber wir haben sie ja gerade manuell im Kreis schwimmen lassen!
             return 'stationary';
         }
+
+        // Normaler Energieverbrauch, wenn sie NICHT gerade tanzt/gebiert
+        this.energy -= (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
+
         return 'moving';
     }
 
@@ -132,9 +159,9 @@ class AnimalCell extends BaseCell {
         const maxTurn = 0.2; // Keep turn speed
         this.angle += Math.max(-maxTurn, Math.min(maxTurn, diff));
 
-        // NEU: Geschwindigkeitsbonus durch den Schwanz berechnen
-        // Faktor 0.1 bedeutet: +10% Geschwindigkeit pro Schwanzsegment
-        const tailBonus = 1 + (this.tailSegments.length * 0.1);
+        // ANGEPASST: Der Bonus wächst jetzt viel langsamer!
+        // 0.03 bedeutet: Nur noch +3% Geschwindigkeit pro Schwanzsegment (statt 10%)
+        const tailBonus = 1 + (this.tailSegments.length * 0.03);
 
         // Den Bonus auf die Endgeschwindigkeit aufrechnen
         const currentSpeed = this.genome.speed * this.speedMultiplier * tailBonus;
@@ -179,7 +206,6 @@ class AnimalCell extends BaseCell {
         return closestTarget;
     }
 
-    // NEU: Diese Methode ruft jede Zelle pro Frame auf
     checkTargetTimeout() {
         if (this.target) {
             this.targetTimer++;
@@ -196,8 +222,16 @@ class AnimalCell extends BaseCell {
                 this.stuckTimer = 0; // Zelle bewegt sich wieder, Timer zurücksetzen
             }
 
-            // Abbruch: 2 Sekunden festgesteckt (120 Frames) ODER 8 Sekunden erfolglos gejagt (480 Frames)
-            if (this.stuckTimer > 120 || this.targetTimer > 480) {
+            // NEU: Dynamische Jagd-Zeit!
+            // Fleischfresser jagen bis zu 15 Sekunden (900 Frames),
+            // Pflanzenfresser geben schon nach ca. 6.5 Sekunden (400 Frames) auf.
+            const maxChaseTime = (this instanceof CarnivoreCell) ? 900 : 400;
+
+            // Wenn der Jäger am Stein feststeckt, darf er auch etwas länger probieren (3 statt 2 Sek)
+            const maxStuckTime = (this instanceof CarnivoreCell) ? 180 : 120;
+
+            // Abbruch-Bedingung
+            if (this.stuckTimer > maxStuckTime || this.targetTimer > maxChaseTime) {
                 this.target = null; // Ziel verwerfen
                 this.stuckTimer = 0;
                 this.targetTimer = 0;
