@@ -59,8 +59,8 @@ class PlantSegment extends BaseCell {
         }
 
         // In der Startup-Phase wachsen neue Ranken fast sofort
-        const requiredAge = isStartup ? 10 : 100;
-        const growChance = isStartup ? 0.5 : 0.1;
+        const requiredAge = isStartup ? 10 : (this.isSuper ? 30 : 100);
+        const growChance = isStartup ? 0.5 : (this.isSuper ? 0.5 : 0.1);
 
         if (this.isTip && this.age > requiredAge && Math.random() < growChance) {
             this.shouldGrow = true;
