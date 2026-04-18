@@ -48,7 +48,11 @@ class PlantSegment extends BaseCell {
         this.age++;
 
         // In der Startup-Phase wird die Pflanze 20x schneller dick
-        const growthRate = isStartup ? 0.2 : 0.01;
+        let growthRate = isStartup ? 0.2 : 0.01;
+
+        if (this.isSuper) {
+            growthRate *= 5.0;
+        }
 
         if (this.size < 10) {
             this.size += growthRate;
@@ -122,26 +126,20 @@ class AnimalCell extends BaseCell {
         this.age++;
         if (this.speedMultiplier < 1.0) this.speedMultiplier += 0.001;
 
-        // if (this.size < this.genome.maxSize) {
-        //     this.size += 0.001;
-        // }
+        // NEU: Differenzierung zwischen Herbivoren und Carnivoren für die Vermehrung
+        const isHerbivore = this instanceof HerbivoreCell;
 
-        const targetTailLength = Math.min(10, Math.floor(this.size + 1));
+        // Herbivoren: 60% Energie nötig, mind. 300 Alter, 30 Frames Dauer, 300 Cooldown
+        // Carnivoren: 90% Energie nötig, mind. 600 Alter, 60 Frames Dauer, 1000 Cooldown
+        const energyRequired = isHerbivore ? 0.6 : 0.9;
+        const minAgeRequired = isHerbivore ? 300 : 600;
+        const reproFrames = isHerbivore ? 30 : 60;
+        const cooldown = isHerbivore ? 300 : 1000;
 
-        if (this.tailSegments.length < targetTailLength) {
-            this.shouldGrowTail = true;
-        }
-
-        // NEU: Cooldown in jedem Frame reduzieren, bis er wieder bei 0 ist
-        if (this.birthCooldown > 0) {
-            this.birthCooldown--;
-        }
-
-        // NEU: Die Zelle muss nun ihre maximale Größe (zu mindestens 95%) erreicht haben!
-        // Das Alter (minAgeForReproduction) haben wir als zusätzliche Sicherheit trotzdem noch drin gelassen.
-        if (this.energy >= this.getMaxEnergy() * 0.95 &&
-            this.size >= this.genome.maxSize * 0.80 &&
-            this.age > this.genome.minAgeForReproduction &&
+        // Die Zelle muss die Energie-Schwelle erreichen, um den Fortpflanzungs-Modus zu starten
+        if (this.energy >= this.getMaxEnergy() * energyRequired &&
+            this.size >= this.genome.maxSize * 0.8 &&
+            this.age > minAgeRequired &&
             this.birthCooldown === 0 &&
             !this.reproducing) {
 
@@ -152,36 +150,27 @@ class AnimalCell extends BaseCell {
         // Der Geburtstanz & Spawnen
         if (this.reproducing) {
             this.reproTimer++;
-            const reproFrames = 60;
 
             this.angle += (Math.PI * 4) / reproFrames;
 
-            // NEU: Der Tanz-Radius skaliert jetzt perfekt mit der Zellgröße!
-            // Faktor 1.5 bedeutet:
-            // Eine Baby-Zelle (Größe 2) schwimmt mit Speed 3 einen sehr engen Kreis.
-            // Eine gigantische Zelle (Größe 10) schwimmt mit Speed 15 einen majestätischen, riesigen Bogen.
             const danceSpeed = this.size * 0.5;
-
             this.x += Math.cos(this.angle) * danceSpeed;
             this.y += Math.sin(this.angle) * danceSpeed;
 
             if (this.reproTimer >= reproFrames) {
                 this.angle = this.angle % (Math.PI * 2);
-                this.energy /= 1.2;
+                this.energy /= 1.5; // Energie-Verlust bei der Geburt
                 this.reproducing = false;
                 this.hasReproduced = true;
                 this.reproTimer = 0;
-                this.birthCooldown = 1000;
+                this.birthCooldown = cooldown;
 
                 return 'reproduce';
             }
             return 'stationary';
         }
 
-        // const consumption = (this.genome.metabolism * Math.sqrt(this.size / 2)) * this.getMetabolismMultiplier() * 0.5;
-        // this.energy -= consumption;
-
-        // DIE ALTE, MAGISCHE FORMEL: Wir TEILEN wieder durch die Größe!
+        // Energieverbrauch (wird durch Größe/Stoffwechsel bestimmt)
         this.energy -= (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
 
         return 'moving';

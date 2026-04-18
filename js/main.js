@@ -59,7 +59,7 @@ function init() {
         entities.push(herbivore);
         addInitialTail(herbivore, entities);
     }
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 3; i++) {
         let carnivore = new CarnivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, new Genome());
         entities.push(carnivore);
         addInitialTail(carnivore, entities);
