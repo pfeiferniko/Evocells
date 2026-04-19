@@ -70,7 +70,8 @@ canvas {
     cursor: pointer;
     font-family: sans-serif;
     font-size: 14px;
-    transition: background 0.3s;
+    opacity: 0.3; /* Fast komplett unsichtbar! (0.0 wäre ganz unsichtbar) */
+    transition: opacity 0.3s ease; /* Weicher Übergang */
 }
 
 #fullscreen-btn:hover {
