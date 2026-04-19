@@ -10,10 +10,10 @@ class Genome {
     }
 
     mutate() {
-        this.speed += (Math.random() - 0.5) * 0.2;
-        this.maxSize += (Math.random() - 0.5) * 1.0;
+        //this.speed += (Math.random() - 0.5) * 0.2;
+        this.maxSize += (Math.random() - 0.5) * 5.0;
         this.maxEnergy += (Math.random() - 0.5) * 10;
-        this.minAgeForReproduction += (Math.random() - 0.5) * 100;
+        //this.minAgeForReproduction += (Math.random() - 0.5) * 100;
     }
 }
 
@@ -35,7 +35,16 @@ class PlantSegment extends BaseCell {
 
         // NEU: Ist es eine Super-Pflanze?
         this.isSuper = isSuper;
+        // --- NEU: Variable Maximalgröße ---
+        if (this.isSuper) {
+            // Super-Pflanzen: Zufallswert zwischen 15 und 25
+            this.maxSize = 10 + Math.random() * 3;
+        } else {
+            // Normale Pflanzen: Fixe Größe 10
+            this.maxSize = 10;
+        }
         this.color = isSuper ? '#b200ff' : 'green'; // Lila für Super, Grün für Normal
+        this.opacity = 0.7 + Math.random() * 0.3;
 
         this.parent = parent;
         this.age = 0;
@@ -54,7 +63,7 @@ class PlantSegment extends BaseCell {
             growthRate *= 5.0;
         }
 
-        if (this.size < 10) {
+        if (this.size < this.maxSize) {
             this.size += growthRate;
         }
 
@@ -80,8 +89,16 @@ class StoneCell extends BaseCell {
             // Super-Steine bekommen eine leicht mystische, dunkellila Färbung
             this.color = '#4a3060';
         } else {
-            const gray = Math.floor(60 + Math.random() * 80);
-            this.color = `rgb(${gray}, ${gray}, ${gray})`;
+            // Basis-Helligkeit berechnen (zwischen 50 und 110)
+            const baseGray = Math.floor(50 + Math.random() * 60);
+
+            // NEU: Der Grün-Wert wird um 30 bis 50 Punkte erhöht,
+            // rot und blau bleiben auf dem Basis-Wert. Das ergibt den Grünstich (Moos-Effekt).
+            const r = baseGray;
+            const g = baseGray + Math.floor(30 + Math.random() * 20);
+            const b = baseGray;
+
+            this.color = `rgb(${r}, ${g}, ${b})`;
         }
 
         this.size = size;
@@ -109,6 +126,10 @@ class AnimalCell extends BaseCell {
         this.stuckTimer = 0;
         this.lastX = x;
         this.lastY = y;
+        this.reproductionCount = 0; // Wie oft hat das Tier schon Kinder bekommen?
+        this.maxReproductions = 1;  // Standardwert (wird von Pflanzen-/Fleischfressern überschrieben)
+        this.agingFactor = 1.0; // <--- NEU: Startet bei 100% Fitness
+        this.isEaten = false;
     }
 
     // NEU: Berechnet die maximale Energie dynamisch nach Körpergröße
@@ -126,22 +147,48 @@ class AnimalCell extends BaseCell {
         this.age++;
         if (this.speedMultiplier < 1.0) this.speedMultiplier += 0.001;
 
-        // NEU: Differenzierung zwischen Herbivoren und Carnivoren für die Vermehrung
+        // --- NEU: Altersschwäche ---
+        // Wenn das Tier keine Kinder mehr kriegen kann, wird es langsam alt
+        if (this.reproductionCount >= this.maxReproductions) {
+            // 0.0002 pro Frame bedeutet bei 60 FPS: Es dauert etwas über 1 Minute,
+            // bis das Tier fast komplett stillsteht. Du kannst den Wert anpassen!
+            if (this.agingFactor > 0.1) { // Wir kappen es bei 0.1, damit sie noch GANZ leicht kriechen
+                this.agingFactor -= 0.0002;
+            }
+        }
+
+        // Zieht in jedem Frame 1 ab, bis er wieder bei 0 ist, damit das Tier wieder bereit wird.
+        if (this.birthCooldown > 0) {
+            this.birthCooldown--;
+        }
+
+        // Der Schwanz wächst mit der Körpergröße mit (maximal bis Tiefe 10)
+        const targetTailDepth = Math.min(10, Math.floor(this.size + 1));
+
+        // NEU: Wir messen die echte "Länge" (Tiefe) des Schwanzes, nicht mehr nur die Array-Größe
+        const currentDepth = this.tailSegments.length > 0 ? Math.max(...this.tailSegments.map(t => t.depth)) : 0;
+
+        if (currentDepth < targetTailDepth) {
+            this.shouldGrowTail = true;
+        }
+
+        // Differenzierung zwischen Herbivoren und Carnivoren für die Vermehrung
         const isHerbivore = this instanceof HerbivoreCell;
 
         // Herbivoren: 60% Energie nötig, mind. 300 Alter, 30 Frames Dauer, 300 Cooldown
         // Carnivoren: 90% Energie nötig, mind. 600 Alter, 60 Frames Dauer, 1000 Cooldown
-        const energyRequired = isHerbivore ? 0.6 : 0.9;
+        const energyRequired = isHerbivore ? 0.7 : 0.9;
         const minAgeRequired = isHerbivore ? 300 : 600;
         const reproFrames = isHerbivore ? 30 : 60;
-        const cooldown = isHerbivore ? 300 : 1000;
+        const cooldown = isHerbivore ? 3000 : 10000;
 
         // Die Zelle muss die Energie-Schwelle erreichen, um den Fortpflanzungs-Modus zu starten
         if (this.energy >= this.getMaxEnergy() * energyRequired &&
             this.size >= this.genome.maxSize * 0.8 &&
             this.age > minAgeRequired &&
             this.birthCooldown === 0 &&
-            !this.reproducing) {
+            !this.reproducing &&
+            this.reproductionCount < this.maxReproductions) { // <--- NEU: Check gegen das Limit
 
             this.reproducing = true;
             this.reproTimer = 0;
@@ -162,6 +209,7 @@ class AnimalCell extends BaseCell {
                 this.energy /= 1.5; // Energie-Verlust bei der Geburt
                 this.reproducing = false;
                 this.hasReproduced = true;
+                this.reproductionCount++; // <--- NEU: Den Wurf-Zähler um 1 erhöhen
                 this.reproTimer = 0;
                 this.birthCooldown = cooldown;
 
@@ -170,8 +218,23 @@ class AnimalCell extends BaseCell {
             return 'stationary';
         }
 
-        // Energieverbrauch (wird durch Größe/Stoffwechsel bestimmt)
-        this.energy -= (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
+        // --- NEU: Angepasster Energieverbrauch ---
+        // Basis-Verbrauch berechnen
+        let consumption = (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
+
+        // Pflanzenfresser sind effizienter und verlieren weniger Energie (nur 60% des normalen Werts)
+        if (isHerbivore) {
+            consumption *= 0.6; // Diesen Wert kannst du anpassen (z.B. 0.5 für noch weniger Verbrauch)
+        }
+
+        // --- NEU: Extremer Altersschwäche-Stoffwechsel ---
+        // Durch die Division (1.0 / agingFactor) explodiert der Verbrauch am Ende:
+        // Alter 0%  (Faktor 1.0) -> 1.0 / 1.0 = 1x (normaler Verbrauch)
+        // Alter 50% (Faktor 0.5) -> 1.0 / 0.5 = 2x Verbrauch
+        // Alter 90% (Faktor 0.1) -> 1.0 / 0.1 = 10x Verbrauch!
+        consumption = consumption * (1.0 / this.agingFactor);
+
+        this.energy -= consumption;
 
         return 'moving';
     }
@@ -210,9 +273,9 @@ class AnimalCell extends BaseCell {
 
         this.angle += Math.max(-currentMaxTurn, Math.min(currentMaxTurn, diff));
 
-        // 3. Volle Geschwindigkeit berechnen (inklusive Schwanz)
-        const tailBonus = 1 + (this.tailSegments.length * 0.03);
-        let currentSpeed = this.genome.speed * this.speedMultiplier * tailBonus;
+        // 3. Volle Geschwindigkeit berechnen (Genetik * Verletzung * Alter)
+        // ERSETZE DEINE BISHERIGE SPEED-ZEILE DURCH DIESE:
+        let currentSpeed = this.genome.speed * this.speedMultiplier * this.agingFactor;
 
         // 4. Die "Punktlandung"
         if (distanceToTarget < currentSpeed) {
@@ -288,24 +351,27 @@ class AnimalCell extends BaseCell {
                 if (this.stuckTimer > 40) {
                     const dx = this.x - this.anchorX;
                     const dy = this.y - this.anchorY;
-
-                    // Satz des Pythagoras: Wie weit sind wir vom Anker entfernt?
                     const trueDistMovedSq = dx * dx + dy * dy;
 
-                    // Sind wir in 40 Frames insgesamt weniger als 15 Pixel vorangekommen?
-                    // (225 = 15 * 15). Das heißt: Wir zappeln nur oder stecken an einer Kante fest!
-                    if (trueDistMovedSq < 225) {
+                    // --- ANGEPASSTE LOGIK ---
+                    // Wir nehmen den Basis-Schwellenwert (15 Pixel) und multiplizieren ihn
+                    // mit dem agingFactor. Wenn ein Tier also nur noch 20% Speed hat,
+                    // akzeptieren wir auch, dass es nur 20% der Strecke schafft,
+                    // ohne es als "feststeckend" zu werten.
+                    const minMovement = 15 * this.agingFactor;
+                    const minMovementSq = minMovement * minMovement;
+
+                    if (trueDistMovedSq < minMovementSq) {
                         this.target = null;
                         this.stuckTimer = 0;
                         this.anchorX = undefined;
 
                         // Stark wegdrehen, um aus der Sackgasse zu entkommen
                         this.angle += (Math.random() > 0.5 ? 1 : -1) * (Math.PI * 0.8);
-                        return; // Check hier sofort beenden
+                        return;
                     }
 
-                    // Ansonsten: Wir haben freie Bahn und jagen weiter!
-                    // Timer resetten und neuen Anker für die nächste Messung setzen.
+                    // Ansonsten: Alles ok, einfach weiter messen
                     this.stuckTimer = 0;
                     this.anchorX = this.x;
                     this.anchorY = this.y;
@@ -322,11 +388,22 @@ class AnimalCell extends BaseCell {
 class HerbivoreCell extends AnimalCell {
     constructor(x, y, genome) {
         super(x, y, genome);
-        this.color = 'orange';
+
+        const r = Math.floor(200 + Math.random() * 55);
+        const g = Math.floor(100 + Math.random() * 80);
+        const b = Math.floor(Math.random() * 40);
+        this.color = `rgb(${r}, ${g}, ${b})`;
+
+        const dr = Math.floor(Math.random() * 256);
+        const dg = Math.floor(Math.random() * 256);
+        const db = Math.floor(Math.random() * 256);
+        this.dotColor = `rgb(${dr}, ${dg}, ${db})`;
+
         this.metabolismMultiplier = 1.0;
         this.target = null;
         this.threat = null;
-        this.genome.speed = this.genome.speed * 0.8;
+        // NEU: Hier stellst du ein, wie oft Pflanzenfresser werfen dürfen (z.B. 3 Mal)
+        this.maxReproductions = 2;
     }
 
     getMetabolismMultiplier() {
@@ -403,35 +480,59 @@ class HerbivoreCell extends AnimalCell {
 class CarnivoreCell extends AnimalCell {
     constructor(x, y, genome) {
         super(x, y, genome);
-        this.color = 'red';
+
+        const r = Math.floor(150 + Math.random() * 105);
+        const g = Math.floor(Math.random() * 40);
+        const b = Math.floor(Math.random() * 40);
+        this.color = `rgb(${r}, ${g}, ${b})`;
+
+        const dr = Math.floor(Math.random() * 256);
+        const dg = Math.floor(Math.random() * 256);
+        const db = Math.floor(Math.random() * 256);
+        this.dotColor = `rgb(${dr}, ${dg}, ${db})`;
+
         this.metabolismMultiplier = 0.8; // Increased from 0.5 to starve faster
         this.genome.sightRange = 500;
-        this.genome.sightAngle = Math.PI * 0.5;
+        this.genome.sightAngle = Math.PI * 0.8;
+        // NEU: Hier stellst du ein, wie oft Fleischfresser werfen dürfen (z.B. 1 oder 2 Mal)
+        this.maxReproductions = 2;
     }
 
     update(grid) {
         const status = this.updateBase(grid);
         if (status !== 'moving') return status;
 
-        this.checkTargetTimeout(); // <--- NEU: Überprüfen, ob sie feststeckt
+        this.checkTargetTimeout(); // Überprüfen, ob sie feststeckt
+
+        // Ziel aufgeben, falls die Beute inzwischen wächst und plötzlich größer ist
+        if (this.target && this.target.size > this.size) {
+            this.target = null;
+        }
 
         if (!this.target || !this.target.alive) {
             const potentialFood = grid.getEntitiesInArea(this.x, this.y, this.genome.sightRange * 5);
 
-            const herbivores = potentialFood.filter(e => e instanceof HerbivoreCell && e.alive);
+            // --- NEU: Größen-Check für Pflanzenfresser ---
+            // Sie filtern jetzt direkt alle Pflanzenfresser heraus, die größer sind als sie selbst
+            const herbivores = potentialFood.filter(e =>
+                e instanceof HerbivoreCell &&
+                e.alive &&
+                e.size <= this.size
+            );
             this.target = this.findClosestInSight(herbivores);
 
+            // --- NEU: Größen-Check für Kannibalismus (Fleischfresser jagen) ---
             if (!this.target) {
                 const smallerCarnivores = potentialFood.filter(e =>
                     e instanceof CarnivoreCell &&
                     e.alive &&
                     e !== this &&
-                    this.size > e.size
+                    e.size <= this.size // Darf jetzt auch "gleich groß" sein!
                 );
                 this.target = this.findClosestInSight(smallerCarnivores);
             }
 
-            this.targetTimer = 0; // <--- NEU: Timer reset bei neuem Ziel
+            this.targetTimer = 0; // Timer reset bei neuem Ziel
         }
 
         this.move(this.target);
@@ -440,25 +541,55 @@ class CarnivoreCell extends AnimalCell {
 }
 
 class TailSegment extends BaseCell {
-    constructor(x, y, parent, size) {
+    // NEU: 'branch' statt 'sideOffset'
+    constructor(x, y, parent, size, branch = 0, depth = 1) {
         super(x, y, null);
         this.type = 'tail';
         this.color = parent ? parent.color : 'grey';
+        this.dotColor = parent ? parent.dotColor : 'white';
         this.parent = parent;
         this.size = size;
+        this.branch = branch; // -1 für links, 1 für rechts, 0 für mittig
+        this.depth = depth;
+
+        this.spineX = x;
+        this.spineY = y;
     }
 
     update() {
         if (this.parent) {
-            const dx = this.parent.x - this.x;
-            const dy = this.parent.y - this.y;
+            // NEU: Das Segment folgt immer dem ZENTRALEN Rückgrat des Elternteils,
+            // nicht dessen echter, zur Seite verschobener Position!
+            const targetX = this.parent.spineX !== undefined ? this.parent.spineX : this.parent.x;
+            const targetY = this.parent.spineY !== undefined ? this.parent.spineY : this.parent.y;
+
+            const dx = targetX - this.spineX;
+            const dy = targetY - this.spineY;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            
-            const targetDist = this.parent.size + 2; 
+
+            const targetDist = this.parent.size + 2;
+            let angle = Math.atan2(dy, dx);
+
+            // Das unsichtbare Rückgrat kerzengerade hinterherziehen
             if (dist > targetDist) {
-                const angle = Math.atan2(dy, dx);
-                this.x = this.parent.x - Math.cos(angle) * targetDist;
-                this.y = this.parent.y - Math.sin(angle) * targetDist;
+                this.spineX = targetX - Math.cos(angle) * targetDist;
+                this.spineY = targetY - Math.sin(angle) * targetDist;
+            }
+
+            // NEU: V-förmiges Auseinandergehen berechnen!
+            if (this.branch !== 0) {
+                // Bei Tiefe 4 beginnt der Split (depth - 3 = 1).
+                // Je tiefer, desto breiter (Faktor 2.5 pro Glied).
+                const spread = Math.max(0, (this.depth - 3) * 2.5);
+
+                const perpAngle = angle + Math.PI / 2; // 90 Grad Winkel
+
+                this.x = this.spineX + Math.cos(perpAngle) * (spread * this.branch);
+                this.y = this.spineY + Math.sin(perpAngle) * (spread * this.branch);
+            } else {
+                // Ein gerader Schwanz liegt exakt auf dem Rückgrat
+                this.x = this.spineX;
+                this.y = this.spineY;
             }
         }
     }
