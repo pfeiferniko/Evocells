@@ -9,6 +9,36 @@ let grid;
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
 
+// --- VOLLBILD-LOGIK ---
+const fullscreenBtn = document.getElementById('fullscreen-btn');
+
+if (fullscreenBtn) {
+    fullscreenBtn.addEventListener('click', () => {
+        // Wir nehmen das gesamte HTML-Dokument in den Vollbildmodus
+        const elem = document.documentElement;
+
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            // Vollbild aktivieren
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) { /* Safari / iOS */
+                elem.webkitRequestFullscreen();
+            }
+            fullscreenBtn.innerText = "Beenden";
+            fullscreenBtn.style.background = "rgba(0, 0, 0, 0.5)";
+        } else {
+            // Vollbild beenden
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) { /* Safari / iOS */
+                document.webkitExitFullscreen();
+            }
+            fullscreenBtn.innerText = "Vollbild";
+            fullscreenBtn.style.background = "rgba(255, 255, 255, 0.15)";
+        }
+    });
+}
+
 function init() {
     console.log("Initializing...");
     startTime = Date.now(); // NEU: Stoppuhr starten
