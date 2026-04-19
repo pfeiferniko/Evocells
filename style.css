@@ -18,21 +18,35 @@ body {
     background-color: #000;
     box-shadow: 0 0 20px rgba(0,0,0,0.5);
 
-    aspect-ratio: 2 / 1;
+    /* Standard: Breitbild-Logik (2:1) */
+    --ratio-w: 2;
+    --ratio-h: 1;
+    aspect-ratio: var(--ratio-w) / var(--ratio-h);
 
-    /* Wir nutzen 90% der verfügbaren Höhe */
-    height: 90vh;
-    /* Da das Spiel 2:1 ist, muss die Breite genau das Doppelte der Höhe sein */
-    width: 180vh;
-
-    /* Damit es nicht zu groß wird (für sehr breite Monitore) */
-    max-width: 95vw;
-    max-height: 47.5vw; /* Die Hälfte der maximalen Breite */
+    /* Die Magie: min() wählt automatisch den Wert, der reinpasst.
+       Breite ist max 90vw ODER das berechnete Verhältnis zur max Höhe.
+       Höhe ist max 90vh ODER das berechnete Verhältnis zur max Breite.
+    */
+    width: min(90vw, calc(90vh * (var(--ratio-w) / var(--ratio-h))));
+    height: min(90vh, calc(90vw * (var(--ratio-h) / var(--ratio-w))));
 
     display: flex;
     justify-content: center;
     align-items: center;
     overflow: hidden;
+}
+
+/* Hochkant-Modus (Portrait) */
+@media (max-aspect-ratio: 1/1) {
+    #game-container {
+        /* Ändere das Verhältnis auf 1:2 */
+        --ratio-w: 1;
+        --ratio-h: 2;
+
+        /* Da wir oben min() und die Variablen nutzen,
+           müssen wir width und height hier gar nicht mehr neu schreiben!
+           Der Browser rechnet das durch die neuen Variablen automatisch richtig aus. */
+    }
 }
 
 canvas {

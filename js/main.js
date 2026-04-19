@@ -1,10 +1,10 @@
 const canvas = document.getElementById('simulationCanvas');
 const ctx = canvas.getContext('2d');
 
-const WORLD_WIDTH = 2000;
-const WORLD_HEIGHT = 1000;
+let WORLD_WIDTH = 2000;
+let WORLD_HEIGHT = 1000;
 const GRID_SIZE = 50;
-const grid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
+let grid;
 
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
@@ -12,6 +12,32 @@ let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
 function init() {
     console.log("Initializing...");
     startTime = Date.now(); // NEU: Stoppuhr starten
+
+    // In main.js - init()
+    const isPortrait = window.innerHeight > window.innerWidth;
+
+    // WICHTIG: Setze diese Werte VOR der Generierung der Objekte
+    if (isPortrait) {
+        // Canvas-Größe für Hochkant
+        canvas.width = 1000;
+        canvas.height = 2000;
+
+        // Globale Variablen für deine Simulations-Logik
+        window.WORLD_WIDTH = 1000;
+        window.WORLD_HEIGHT = 2000;
+        WORLD_WIDTH = 1000;
+        WORLD_HEIGHT = 2000;
+
+    } else {
+        canvas.width = 2000;
+        canvas.height = 1000;
+        window.WORLD_WIDTH = 2000;
+        window.WORLD_HEIGHT = 1000;
+        WORLD_WIDTH = 2000;
+        WORLD_HEIGHT = 1000;
+    }
+
+    grid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
 
     // 1. Steine generieren und in einer extra Liste kurz merken
     const stones = [];
@@ -67,8 +93,10 @@ function init() {
         const initialGenome = new Genome();
         // Fleischfresser: Basis-Speed ca. 1.3 (schwankt zwischen 1.2 und 1.4) -> Etwas schneller!
         initialGenome.speed = 1.2 + Math.random() * 0.2;
+        initialGenome.maxSize = 11 + Math.random() * 2;
 
         let carnivore = new CarnivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
+        carnivore.size = 3;
         entities.push(carnivore);
         addInitialTail(carnivore, entities);
     }
@@ -110,7 +138,7 @@ function update() {
 
                 // NEU: Wir richten uns nach der maximalen Tiefe für einen sauberen Übergang
                 const maxDepth = Math.max(...e.tailSegments.map(t => t.depth));
-                const targetSteps = Math.min(10, maxDepth);
+                const targetSteps = maxDepth;
                 const step = (headSize - 1) / targetSteps;
 
                 e.tailSegments.forEach((t) => {
@@ -150,42 +178,88 @@ function update() {
 
             // Reproduktion
             if (status === 'reproduce') {
-                const numChildren = (e instanceof HerbivoreCell) ? 5 : 1;
+                let numChildren;
 
-                for (let i = 0; i < numChildren; i++) {
-                    const newGenome = new Genome(e.genome);
-                    newGenome.mutate();
+                if (e instanceof HerbivoreCell) {
+                    // 1. Aktuelle Anzahl der Pflanzenfresser zählen
+                    const herbivoreCount = entities.filter(ent => ent instanceof HerbivoreCell && ent.alive).length;
 
-                    const offsetX = (Math.random() - 0.5) * 30;
-                    const offsetY = (Math.random() - 0.5) * 30;
+                    if (herbivoreCount <= 30) {
+                        numChildren = 10;
+                    } else if (herbivoreCount <= 100) {
+                        // Bereich 30 bis 100: Von 10 runter auf 1 Kind
+                        // Die Differenz bei den Tieren ist 70 (100 - 30)
+                        // Die Differenz bei den Kindern ist 9 (10 - 1)
+                        numChildren = 10 - ((herbivoreCount - 30) / 70) * 9;
+                    } else {
+                        numChildren = 1; // Minimum bei Überbevölkerung (alles ab 100)
+                    }
 
-                    const childX = Math.max(0, Math.min(WORLD_WIDTH, e.x + offsetX));
-                    const childY = Math.max(0, Math.min(WORLD_HEIGHT, e.y + offsetY));
+                    // Da wir keine halben Kinder haben können:
+                    numChildren = Math.round(numChildren);
+                } else {
+                    // --- NEU: GEBURTENKONTROLLE FÜR FLEISCHFRESSER ---
+                    const carnivoreCount = entities.filter(ent => ent instanceof CarnivoreCell && ent.alive).length;
 
-                    // Das Kind erschaffen (mit seiner vorläufigen Zufallsfarbe)
-                    const child = (e instanceof HerbivoreCell)
-                        ? new HerbivoreCell(childX, childY, newGenome)
-                        : new CarnivoreCell(childX, childY, newGenome);
-
-                    // Hier überschreiben wir die Zufallsfarbe des Babys exakt mit der Farbe der Eltern
-                    child.color = e.color;
-                    child.dotColor = e.dotColor;
-
-                    addInitialTail(child, newEntities);
-
-                    child.energy = Math.min(e.energy, child.getMaxEnergy() - 1);
-                    newEntities.push(child);
+                    // Wenn es mehr als 8 Räuber auf der Karte gibt, bekommen sie gar keine Kinder mehr!
+                    // (Du kannst die Zahl 8 nach Belieben anpassen)
+                    if (carnivoreCount >= 8) {
+                        numChildren = 0;
+                    } else {
+                        numChildren = 1;
+                    }
                 }
 
-                // WICHTIG: Die alten Zeilen, die dem Elternteil hier einen neuen Schwanz
-                // angehängt haben, sind jetzt komplett gelöscht!
+                if (numChildren > 0) {
+                    for (let i = 0; i < numChildren; i++) {
+                        const newGenome = new Genome(e.genome);
+                        newGenome.mutate();
+
+                        const offsetX = (Math.random() - 0.5) * 30;
+                        const offsetY = (Math.random() - 0.5) * 30;
+
+                        const childX = Math.max(0, Math.min(WORLD_WIDTH, e.x + offsetX));
+                        const childY = Math.max(0, Math.min(WORLD_HEIGHT, e.y + offsetY));
+
+                        // Das Kind erschaffen (mit seiner vorläufigen Zufallsfarbe)
+                        const child = (e instanceof HerbivoreCell)
+                            ? new HerbivoreCell(childX, childY, newGenome)
+                            : new CarnivoreCell(childX, childY, newGenome);
+
+                        // Hier überschreiben wir die Zufallsfarbe des Babys exakt mit der Farbe der Eltern
+                        child.color = e.color;
+                        child.dotColor = e.dotColor;
+
+                        addInitialTail(child, newEntities);
+
+                        child.energy = Math.min(e.energy, child.getMaxEnergy() - 1);
+                        newEntities.push(child);
+                    }
+                }
             }
 
             // Animal collision & Eat check
             // Suchradius erhöht (+ 50), damit auch sehr große Steine frühzeitig erkannt werden
             const nearby = grid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
             for (const other of nearby) {
-                if (other === e || other.type === 'tail' || !other.alive) continue;
+                if (other === e || !other.alive) continue;
+
+                // --- NEU: Schwanz-Erkennung ---
+                let rootAnimal = null;
+                if (other.type === 'tail') {
+                    // Pflanzenfresser ignorieren Schwänze wie bisher. Nur Räuber schnappen zu!
+                    if (!(e instanceof CarnivoreCell)) continue;
+
+                    // Wem gehört dieser Schwanz? Wir klettern den Baum hoch bis zum Kopf.
+                    rootAnimal = other.parent;
+                    while (rootAnimal && rootAnimal.type === 'tail') {
+                        rootAnimal = rootAnimal.parent;
+                    }
+
+                    // Ganz wichtig: Ein Räuber darf sich nicht selbst in den Schwanz beißen!
+                    if (rootAnimal === e) continue;
+                }
+
 
                 const dx = other.x - e.x;
                 const dy = other.y - e.y;
@@ -223,6 +297,13 @@ function update() {
                                 eaten = true;
                             }
                         }
+                        // --- NEU: Carnivore beißt in einen Schwanz ---
+                        else if (e instanceof CarnivoreCell && other.type === 'tail' && rootAnimal && e.size >= rootAnimal.size) {
+
+                            // Auch die Bremswirkung ist sanfter, sonst gefriert die Beute sofort ein
+                            rootAnimal.speedMultiplier = Math.max(0.1, rootAnimal.speedMultiplier - 0.02);
+
+                        }
                         // Carnivore eats Herbivore
                         else if (e instanceof CarnivoreCell && other instanceof HerbivoreCell && e.size >= other.size) {
                             other.energy -= 1;
@@ -248,19 +329,29 @@ function update() {
                             if (e.target === other) {
                                 other.energy -= 1;
                                 other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
-
                                 e.energy += 0.05;
 
                                 if (other.energy <= 0) {
                                     other.isEaten = true;
-                                    e.energy = Math.min(e.getMaxEnergy(), e.energy + 80);
                                     other.alive = false;
-                                    e.energy += Math.floor(other.size * 3);
-
-                                    // NEU: Auch Kannibalismus gibt einen fetten Wachstums-Schub
-                                    if (e.size < e.genome.maxSize) e.size += 0.5;
-
                                     if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
+
+                                    // --- NEU: VERLETZUNGS-LOGIK BEIM KAMPF ---
+                                    // Der Sieger verliert massiv Energie durch den Kampf mit einem anderen Räuber!
+                                    // Je größer das Opfer war, desto mehr Schaden nimmt der Sieger.
+                                    const combatDamage = other.size * 3;
+                                    e.energy -= combatDamage;
+
+                                    // Wenn der Sieger den Kampf zwar gewinnt, aber an seinen Verletzungen stirbt:
+                                    if (e.energy <= 0) {
+                                        e.alive = false;
+                                        if (e.tailSegments) e.tailSegments.forEach(t => t.alive = false);
+                                    } else {
+                                        // Nur wenn er überlebt, bekommt er Nahrung, aber WENIGER als bei einem Pflanzenfresser
+                                        e.energy = Math.min(e.getMaxEnergy(), e.energy + 30);
+                                        // Und er wächst nur noch minimal durch Kannibalismus
+                                        if (e.size < e.genome.maxSize) e.size += 0.1;
+                                    }
                                 }
                                 eaten = true;
                             }
@@ -268,7 +359,7 @@ function update() {
                     }
 
                     // NEUE KOLLISIONS-LOGIK MIT GESTRÜPP-WIDERSTAND
-                    if (!eaten) {
+                    if (!eaten && other.type !== 'tail') {
                         const angle = Math.atan2(dy, dx);
                         const overlap = minDist - dist;
 
@@ -458,10 +549,27 @@ function update() {
             }
         }
 
-        if (e.x < 0) { e.x = 0; if (e.type === 'animal') e.angle = Math.PI - e.angle; }
-        if (e.x > WORLD_WIDTH) { e.x = WORLD_WIDTH; if (e.type === 'animal') e.angle = Math.PI - e.angle; }
-        if (e.y < 0) { e.y = 0; if (e.type === 'animal') e.angle = -e.angle; }
-        if (e.y > WORLD_HEIGHT) { e.y = WORLD_HEIGHT; if (e.type === 'animal') e.angle = -e.angle; }
+        // --- NEUE RAND-LOGIK ---
+        // Puffer ist die Größe des Objekts, damit es immer komplett im Bild bleibt.
+        // Bei Pflanzen/Steinen nehmen wir e.size, falls definiert, sonst einen Standardwert.
+        const margin = e.size || 5;
+
+        if (e.x < margin) {
+            e.x = margin;
+            if (e.type === 'animal') e.angle = Math.PI - e.angle;
+        }
+        if (e.x > WORLD_WIDTH - margin) {
+            e.x = WORLD_WIDTH - margin;
+            if (e.type === 'animal') e.angle = Math.PI - e.angle;
+        }
+        if (e.y < margin) {
+            e.y = margin;
+            if (e.type === 'animal') e.angle = -e.angle;
+        }
+        if (e.y > WORLD_HEIGHT - margin) {
+            e.y = WORLD_HEIGHT - margin;
+            if (e.type === 'animal') e.angle = -e.angle;
+        }
 
         if (isAlive && e.alive !== false) survivingEntities.push(e);
     });
