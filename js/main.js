@@ -162,12 +162,18 @@ function init() {
         planktons.push({
             x: Math.random() * WORLD_WIDTH,
             y: Math.random() * WORLD_HEIGHT,
-            baseVx: (Math.random() - 0.5) * 0.2, // Sehr langsame Grunddrift
+            baseVx: (Math.random() - 0.5) * 0.2,
             baseVy: (Math.random() - 0.5) * 0.2,
-            size: Math.random() * 1.5 + 0.5,     // Winzig (0.5 bis 2 Pixel)
-            opacity: Math.random() * 0.2 + 0.05, // Sehr dezent (5% bis 25% sichtbar)
-            wobbleSpeed: Math.random() * 0.002 + 0.001, // Wie schnell sie wackeln
-            wobbleOffset: Math.random() * Math.PI * 2   // Asynchrones Wackeln
+
+            // --- NEU: Größer und sichtbarer für die Pixeloptik ---
+            // Vorher: 0.5 bis 2. Jetzt: 2 bis 5 (Damit überleben sie die Skalierung)
+            size: Math.random() * 2 + 1,
+
+            // Vorher: 0.05 bis 0.25. Jetzt: 0.2 bis 0.5 (Deutlich kräftiger)
+            opacity: Math.random() * 0.3 + 0.2,
+
+            wobbleSpeed: Math.random() * 0.002 + 0.001,
+            wobbleOffset: Math.random() * Math.PI * 2
         });
     }
 
@@ -767,8 +773,8 @@ function draw() {
     ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
-    // --- NEU: PLANKTON ZEICHNEN UND BEWEGEN ---
-    ctx.fillStyle = 'white'; // Die Farbe der Partikel
+    // Ein leuchtendes, helles Cyan/Blaugrün
+    ctx.fillStyle = '#44aaff';
 
     planktons.forEach(p => {
         // Sanftes Driften + leichtes Wackeln durch Sinus
@@ -839,7 +845,7 @@ function draw() {
                 ctx.save(); // Kontext speichern
 
                 // MAGIE: Farben addieren sich auf! Das erzeugt ein starkes Leuchten
-                ctx.globalCompositeOperation = 'lighter';
+                // ctx.globalCompositeOperation = 'lighter';
 
                 ctx.fillStyle = e.dotColor;
                 ctx.beginPath();
