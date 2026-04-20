@@ -1,12 +1,12 @@
 class Genome {
     constructor(data = {}) {
-        this.speed = data.speed || 1;
-        this.maxSize = data.maxSize || 10;
-        this.sightRange = data.sightRange || 50;
-        this.sightAngle = data.sightAngle || Math.PI / 4;
-        this.metabolism = data.metabolism || 0.05;
-        this.maxEnergy = data.maxEnergy || 100;
-        this.minAgeForReproduction = data.minAgeForReproduction || 1000;
+        this.speed = data.speed || window.SETTINGS.GENOME_SPEED;
+        this.maxSize = data.maxSize || window.SETTINGS.GENOME_MAX_SIZE;
+        this.sightRange = data.sightRange || window.SETTINGS.GENOME_SIGHT_RANGE;
+        this.sightAngle = data.sightAngle || window.SETTINGS.GENOME_SIGHT_ANGLE;
+        this.metabolism = data.metabolism || window.SETTINGS.GENOME_METABOLISM;
+        this.maxEnergy = data.maxEnergy || window.SETTINGS.GENOME_MAX_ENERGY;
+        this.minAgeForReproduction = data.minAgeForReproduction || window.SETTINGS.GENOME_MIN_AGE_REPRO;
     }
 
     mutate() {
@@ -37,11 +37,11 @@ class PlantSegment extends BaseCell {
         this.isSuper = isSuper;
         // --- NEU: Variable Maximalgröße ---
         if (this.isSuper) {
-            // Super-Pflanzen: Zufallswert zwischen 15 und 25
-            this.maxSize = 10 + Math.random() * 3;
+            // Super-Pflanzen: Zufallswert um die Basisgröße herum
+            this.maxSize = window.SETTINGS.PLANT_MAX_SIZE_SUPER_BASE + Math.random() * 3;
         } else {
-            // Normale Pflanzen: Fixe Größe 10
-            this.maxSize = 10;
+            // Normale Pflanzen: Fixe Größe
+            this.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL;
         }
         this.color = isSuper ? '#b200ff' : 'green'; // Lila für Super, Grün für Normal
         this.opacity = 0.7 + Math.random() * 0.3;
@@ -50,26 +50,27 @@ class PlantSegment extends BaseCell {
         this.age = 0;
         this.shouldGrow = false;
         this.isTip = true;
+
+        this.pulseOffset = Math.random() * Math.PI * 2;
+        this.pulseSpeed = 0.001 + Math.random() * 0.002;
     }
 
     // Nimmt jetzt den isStartup-Wert aus der main.js entgegen
     update(isStartup = false) {
         this.age++;
 
-        // In der Startup-Phase wird die Pflanze 20x schneller dick
-        let growthRate = isStartup ? 0.2 : 0.01;
+        let growthRate = isStartup ? window.SETTINGS.PLANT_GROWTH_RATE_STARTUP : window.SETTINGS.PLANT_GROWTH_RATE_NORMAL;
 
         if (this.isSuper) {
-            growthRate *= 5.0;
+            growthRate *= window.SETTINGS.PLANT_GROWTH_RATE_SUPER_MULT;
         }
 
         if (this.size < this.maxSize) {
             this.size += growthRate;
         }
 
-        // In der Startup-Phase wachsen neue Ranken fast sofort
-        const requiredAge = isStartup ? 10 : (this.isSuper ? 30 : 100);
-        const growChance = isStartup ? 0.5 : (this.isSuper ? 0.5 : 0.1);
+        const requiredAge = isStartup ? window.SETTINGS.PLANT_REQUIRED_AGE_STARTUP : (this.isSuper ? window.SETTINGS.PLANT_REQUIRED_AGE_SUPER : window.SETTINGS.PLANT_REQUIRED_AGE_NORMAL);
+        const growChance = isStartup ? window.SETTINGS.PLANT_GROW_CHANCE_STARTUP : (this.isSuper ? window.SETTINGS.PLANT_GROW_CHANCE_SUPER : window.SETTINGS.PLANT_GROW_CHANCE_NORMAL);
 
         if (this.isTip && this.age > requiredAge && Math.random() < growChance) {
             this.shouldGrow = true;
@@ -130,6 +131,9 @@ class AnimalCell extends BaseCell {
         this.maxReproductions = 1;  // Standardwert (wird von Pflanzen-/Fleischfressern überschrieben)
         this.agingFactor = 1.0; // <--- NEU: Startet bei 100% Fitness
         this.isEaten = false;
+        this.graceTimer = 0; // NEU: Wenn > 0, kann das Tier nicht durch reinen Energieverlust sterben
+        this.wigglePhase = Math.random() * Math.PI * 2;
+        this.currentWiggleSpeed = 0.05;
     }
 
     // NEU: Berechnet die maximale Energie dynamisch nach Körpergröße
@@ -148,18 +152,19 @@ class AnimalCell extends BaseCell {
         if (this.speedMultiplier < 1.0) this.speedMultiplier += 0.001;
 
         // --- NEU: Altersschwäche ---
-        // Wenn das Tier keine Kinder mehr kriegen kann, wird es langsam alt
         if (this.reproductionCount >= this.maxReproductions) {
-            // 0.0002 pro Frame bedeutet bei 60 FPS: Es dauert etwas über 1 Minute,
-            // bis das Tier fast komplett stillsteht. Du kannst den Wert anpassen!
-            if (this.agingFactor > 0.1) { // Wir kappen es bei 0.1, damit sie noch GANZ leicht kriechen
-                this.agingFactor -= 0.0002;
+            if (this.agingFactor > window.SETTINGS.AGING_MIN_FACTOR) {
+                this.agingFactor -= window.SETTINGS.AGING_DECAY_RATE;
             }
         }
 
         // Zieht in jedem Frame 1 ab, bis er wieder bei 0 ist, damit das Tier wieder bereit wird.
         if (this.birthCooldown > 0) {
             this.birthCooldown--;
+        }
+        
+        if ((this.ignoreTargetTimer || 0) > 0) {
+            this.ignoreTargetTimer--;
         }
 
         // FIX: Wir nutzen die "echte" Größe für den Schwanz.
@@ -177,12 +182,10 @@ class AnimalCell extends BaseCell {
         // Differenzierung zwischen Herbivoren und Carnivoren für die Vermehrung
         const isHerbivore = this instanceof HerbivoreCell;
 
-        // Herbivoren: 60% Energie nötig, mind. 300 Alter, 30 Frames Dauer, 300 Cooldown
-        // Carnivoren: 90% Energie nötig, mind. 600 Alter, 60 Frames Dauer, 1000 Cooldown
-        const energyRequired = isHerbivore ? 0.7 : 0.9;
-        const minAgeRequired = isHerbivore ? 300 : 600;
-        const reproFrames = isHerbivore ? 90 : 90;
-        const cooldown = isHerbivore ? 3000 : 10000;
+        const energyRequired = isHerbivore ? window.SETTINGS.HERB_ENERGY_REQUIRED_REPRO : window.SETTINGS.CARN_ENERGY_REQUIRED_REPRO;
+        const minAgeRequired = isHerbivore ? window.SETTINGS.HERB_MIN_AGE_REPRO : window.SETTINGS.CARN_MIN_AGE_REPRO;
+        const reproFrames = isHerbivore ? window.SETTINGS.HERB_REPRO_FRAMES : window.SETTINGS.CARN_REPRO_FRAMES;
+        const cooldown = isHerbivore ? window.SETTINGS.HERB_COOLDOWN_REPRO : window.SETTINGS.CARN_COOLDOWN_REPRO;
 
         // Die Zelle muss die Energie-Schwelle erreichen, um den Fortpflanzungs-Modus zu starten
         if (this.energy >= this.getMaxEnergy() * energyRequired &&
@@ -212,7 +215,7 @@ class AnimalCell extends BaseCell {
             // Am Höhepunkt (Mitte der Zeit) ist es 1.5x so groß.
             // Formel: Normalgröße + (Sinus-Welle von 0 auf 1 auf 0) * 50% Bonus
             if (this.originalSizeBeforeBirth) {
-                const bloatFactor = 1.0 + (Math.sin(progress * Math.PI) * 1);
+                const bloatFactor = 1.0 + (Math.sin(progress * Math.PI) * 0.25);
                 this.size = this.originalSizeBeforeBirth * bloatFactor;
             }
 
@@ -250,26 +253,33 @@ class AnimalCell extends BaseCell {
         //let consumption = (this.genome.metabolism / (this.size / 2)) * this.getMetabolismMultiplier();
         let consumption = this.genome.metabolism * (1 + (this.size * 0.1)) * this.getMetabolismMultiplier();
 
-        // Pflanzenfresser sind effizienter und verlieren weniger Energie (nur 60% des normalen Werts)
+        // Pflanzenfresser sind effizienter und verlieren weniger Energie
         if (isHerbivore) {
-            consumption *= 0.6; // Diesen Wert kannst du anpassen (z.B. 0.5 für noch weniger Verbrauch)
+            consumption *= window.SETTINGS.HERB_METABOLISM_DISCOUNT;
         }
 
         // --- NEU: Extremer Altersschwäche-Stoffwechsel ---
         // Durch die Division (1.0 / agingFactor) explodiert der Verbrauch am Ende:
-        // Alter 0%  (Faktor 1.0) -> 1.0 / 1.0 = 1x (normaler Verbrauch)
-        // Alter 50% (Faktor 0.5) -> 1.0 / 0.5 = 2x Verbrauch
-        // Alter 90% (Faktor 0.1) -> 1.0 / 0.1 = 10x Verbrauch!
         consumption = consumption * (1.0 / this.agingFactor);
 
         this.energy -= consumption;
 
+        // Wenn der Grace-Timer aktiv ist, darf die Energie nicht unter 0.1 fallen 
+        // (das Tier stirbt erst, wenn es wirklich vom Räuber aufgegessen wurde)
+        if (this.graceTimer > 0) {
+            this.graceTimer--;
+            if (this.energy <= 0) {
+                this.energy = 0.1; 
+            }
+        }
+
         return 'moving';
     }
 
-    move(food) {
+    move(food, isFleeing = false) {
         let targetAngle = this.angle;
         let distanceToTarget = Infinity;
+        let targetWiggleSpeed = 0.05; // Ziel-Takt für diesen Frame (Standard: Ruhig)
 
         // 1. Zielwinkel und Distanz berechnen
         if (food) {
@@ -277,14 +287,14 @@ class AnimalCell extends BaseCell {
             const dy = food.y - this.y;
             distanceToTarget = Math.sqrt(dx * dx + dy * dy);
 
-            // --- NEU: ANTI-WACKEL-FIX ---
-            // Wenn wir das Essen schon berühren, frieren wir die Bewegung ein!
-            // So verhindern wir, dass die Zelle den Mittelpunkt überläuft und zittert.
             const eatRadius = this.size + (food.size || 2);
-            if (distanceToTarget <= eatRadius) {
-                return; // Keine weitere Bewegung und kein Drehen für diesen Frame
+            if (!isFleeing && distanceToTarget <= eatRadius) {
+                // TIER FRISST: Steht still.
+                // Wir glätten den Übergang zum ruhigen Wedeln und brechen die Vorwärtsbewegung ab.
+                this.currentWiggleSpeed += (0.05 - this.currentWiggleSpeed) * 0.1;
+                this.wigglePhase += this.currentWiggleSpeed * 0.3;
+                return;
             }
-            // ----------------------------
 
             targetAngle = Math.atan2(dy, dx);
         } else {
@@ -293,31 +303,41 @@ class AnimalCell extends BaseCell {
 
         const diff = (targetAngle - this.angle + Math.PI) % (2 * Math.PI) - Math.PI;
 
-        // 2. Wendigkeit im Nahkampf
-        let currentMaxTurn = 0.2;
-        if (distanceToTarget < 30) {
-            currentMaxTurn = 1.0;
+        // 2. Wendigkeit
+        let currentMaxTurn = window.SETTINGS.TURN_SPEED_NORMAL;
+        if (!isFleeing && distanceToTarget < 30) {
+            currentMaxTurn = window.SETTINGS.TURN_SPEED_COMBAT;
         }
-
         this.angle += Math.max(-currentMaxTurn, Math.min(currentMaxTurn, diff));
 
-        // 3. Volle Geschwindigkeit berechnen (Genetik * Verletzung * Alter * Größen-Bonus)
-        // Bonus: Jede Größeneinheit bringt 2% mehr Speed
+        // 3. Geschwindigkeit berechnen
         const sizeBonusMultiplier = 1 + (this.size * 0.02);
-
         let currentSpeed = this.genome.speed * this.speedMultiplier * this.agingFactor * sizeBonusMultiplier;
 
-        // 4. Die "Punktlandung"
         if (distanceToTarget < currentSpeed) {
             currentSpeed = distanceToTarget;
         }
 
-        // 5. Bewegen
+        // 4. Bewegen
         this.x += Math.cos(this.angle) * currentSpeed;
         this.y += Math.sin(this.angle) * currentSpeed;
+
+        // --- NEU: Takt fließend anpassen (Stoßdämpfer + Größen-Einfluss) ---
+
+        // Die magische Zahl 4 sorgt dafür, dass ein großes Tier (Größe 10)
+        // wieder bei deinem gewünschten Faktor von ca. 0.4 landet (4 / 10 = 0.4).
+        // Ein Baby (Größe 2) hat hingegen einen Faktor von 2.0 (4 / 2 = 2.0) und wedelt viel schneller!
+        const sizeWiggleFactor = 4 / Math.max(2, this.size);
+
+        // Wir haben das absolute Limit von 0.8 auf 1.2 erhöht,
+        // damit die kleinen Babys bei der Flucht auch wirklich richtig schnell zappeln dürfen.
+        targetWiggleSpeed = 0.05 + Math.min(currentSpeed * sizeWiggleFactor, 1.2);
+
+        this.currentWiggleSpeed += (targetWiggleSpeed - this.currentWiggleSpeed) * 0.1;
+        this.wigglePhase += this.currentWiggleSpeed * 0.3;
     }
 
-    findClosestInSight(candidates) {
+    findClosestInSight(candidates, currentTarget = null) {
         let closestTarget = null;
         let minDistance = Infinity;
         const maxRadius = this.genome.sightRange * 5;
@@ -343,8 +363,15 @@ class AnimalCell extends BaseCell {
             // Wenn der Unterschied kleiner/gleich dem halben Sichtfeld ist, sehen wir es!
             if (angleDiff <= this.genome.sightAngle) {
                 // 3. Check: Ist es näher als das bisher nächste gefundene Ziel?
-                if (distance < minDistance) {
-                    minDistance = distance;
+                let effectiveDistance = distance;
+                
+                // Stickiness: Das aktuelle Ziel wird behandelt, als wäre es viel näher!
+                if (entity === currentTarget) {
+                    effectiveDistance -= window.SETTINGS.HUNT_TARGET_STICKINESS;
+                }
+
+                if (effectiveDistance < minDistance) {
+                    minDistance = effectiveDistance;
                     closestTarget = entity;
                 }
             }
@@ -354,10 +381,27 @@ class AnimalCell extends BaseCell {
     }
 
     // NEU: Sucht das beste Ziel basierend auf Distanz UND Geschwindigkeit
-    findSlowestInSight(candidates) {
+    findSlowestInSight(candidates, grid, currentTarget = null) {
         let bestTarget = null;
         let bestScore = Infinity; // Der niedrigste Score gewinnt
         const maxRadius = this.genome.sightRange * 5;
+
+        // NEU: Sind wir ein erwachsener Räuber (kein Babyschutz mehr)?
+        // Babyschutz ist bei Größe < maxSize * 0.5 (aus der update-Schleife)
+        const isAdultCarnivore = (this instanceof CarnivoreCell) && (this.size >= this.genome.maxSize * 0.5);
+        let rivals = [];
+
+        // Wenn ja, suchen wir einmalig alle anderen großen Räuber in der Nähe,
+        // um ihre Aura zu meiden
+        if (isAdultCarnivore && grid) {
+            const avoidRadius = window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS;
+            rivals = grid.getEntitiesInArea(this.x, this.y, maxRadius + avoidRadius).filter(e => 
+                e instanceof CarnivoreCell && 
+                e.alive && 
+                e !== this && 
+                e.size >= e.genome.maxSize * 0.5 // Nur andere erwachsene Räuber als Gefahr werten
+            );
+        }
 
         for (const entity of candidates) {
             const dx = entity.x - this.x;
@@ -380,12 +424,36 @@ class AnimalCell extends BaseCell {
                 const sizeBonusMultiplier = 1 + (entity.size * 0.02);
                 const currentSpeed = entity.genome.speed * entity.speedMultiplier * entity.agingFactor * sizeBonusMultiplier;
 
-                // --- NEU: Der Jagd-Score ---
-                // Geschwindigkeit hat meist Werte zwischen 0.5 und 2.0.
-                // Distanz liegt meist zwischen 10 und 500.
-                // Indem wir die Geschwindigkeit mit zz.B. 150 multiplizieren, bringen wir beides ins Gleichgewicht.
-                const speedWeight = 150;
-                const score = distance + (currentSpeed * speedWeight);
+                // --- Basis-Jagd-Score (Distanz + Geschwindigkeit) ---
+                const speedWeight = window.SETTINGS.HUNT_SCORE_SPEED_WEIGHT;
+                const distanceWeight = window.SETTINGS.HUNT_SCORE_DISTANCE_WEIGHT;
+                let score = (distance * distanceWeight) + (currentSpeed * speedWeight);
+
+                // --- STICKINESS-BONUS ---
+                // Wenn dies unser aktuelles Ziel ist, ziehen wir Punkte ab, 
+                // um es künstlich "attraktiver" zu machen als gleichwertige Alternativen
+                if (entity === currentTarget) {
+                    score -= window.SETTINGS.HUNT_TARGET_STICKINESS;
+                }
+
+                // --- NEU: Rivalitäts-Strafe ---
+                // Wenn wir ein erwachsener Räuber sind, prüfen wir, ob dicke Konkurrenten beim Essen stehen
+                if (isAdultCarnivore) {
+                    for (const rival of rivals) {
+                        const rdx = entity.x - rival.x;
+                        const rdy = entity.y - rival.y;
+                        const distToRival = Math.sqrt(rdx * rdx + rdy * rdy);
+
+                        // Wenn das Essen näher als 300px an einem Rivalen dran ist...
+                        if (distToRival < window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS) {
+                            // ...bekommt dieses Essen einen saftigen Straf-Score aufgedrückt.
+                            // Je näher der Rivale am Essen ist, desto höher die Strafe.
+                            // (Max Strafe wenn Rivale direkt draufsteht, 0 Strafe wenn 300px entfernt)
+                            const penaltyFactor = 1.0 - (distToRival / window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS);
+                            score += penaltyFactor * window.SETTINGS.HUNT_SCORE_RIVAL_PENALTY;
+                        }
+                    }
+                }
 
                 // Ist dieser Score besser (niedriger) als unser bisheriger Bestwert?
                 if (score < bestScore) {
@@ -412,6 +480,7 @@ class AnimalCell extends BaseCell {
                 this.stuckTimer = 0;
                 this.anchorX = this.x;
                 this.anchorY = this.y;
+                this.accumulatedDist = 0;
             } else {
                 // 2. Echter Feststeck-Check ("Zappel"-Erkennung für BEIDE Typen)
                 this.stuckTimer++;
@@ -420,26 +489,30 @@ class AnimalCell extends BaseCell {
                 if (this.anchorX === undefined) {
                     this.anchorX = this.x;
                     this.anchorY = this.y;
+                    this.accumulatedDist = 0;
                 }
 
-                // Nach 40 Frames (weniger als 1 Sekunde) prüfen wir unsere WIRKLICHE Position
-                if (this.stuckTimer > 40) {
-                    const dx = this.x - this.anchorX;
-                    const dy = this.y - this.anchorY;
-                    const trueDistMovedSq = dx * dx + dy * dy;
+                if (this.lastX !== undefined) {
+                    const frameDx = this.x - this.lastX;
+                    const frameDy = this.y - this.lastY;
+                    this.accumulatedDist += Math.sqrt(frameDx * frameDx + frameDy * frameDy);
+                }
+                this.lastX = this.x;
+                this.lastY = this.y;
 
+                // Nach X Frames prüfen wir unsere WIRKLICHE Position
+                if (this.stuckTimer > window.SETTINGS.STUCK_TIMER_MAX) {
                     // --- ANGEPASSTE LOGIK ---
-                    // Wir nehmen den Basis-Schwellenwert (15 Pixel) und multiplizieren ihn
-                    // mit dem agingFactor. Wenn ein Tier also nur noch 20% Speed hat,
-                    // akzeptieren wir auch, dass es nur 20% der Strecke schafft,
-                    // ohne es als "feststeckend" zu werten.
-                    const minMovement = 15 * this.agingFactor;
-                    const minMovementSq = minMovement * minMovement;
+                    const minMovement = window.SETTINGS.STUCK_MIN_MOVEMENT * this.agingFactor;
 
-                    if (trueDistMovedSq < minMovementSq) {
+                    // NEU: Wir checken die ECHTE zurückgelegte Strecke (Accumulator), nicht nur Start-End-Differenz.
+                    // Wenn das Tier abprallt und zurückschwimmt, hat es sich bewegt!
+                    if (this.accumulatedDist < minMovement) {
                         this.target = null;
                         this.stuckTimer = 0;
                         this.anchorX = undefined;
+                        this.accumulatedDist = 0;
+                        this.ignoreTargetTimer = 60; // Set ignore timer
 
                         // --- VERBESSERTE AUSBRUCH-LOGIK ---
                         const r = Math.random();
@@ -460,13 +533,109 @@ class AnimalCell extends BaseCell {
                     this.stuckTimer = 0;
                     this.anchorX = this.x;
                     this.anchorY = this.y;
+                    this.accumulatedDist = 0;
                 }
             }
         } else {
             // Kein Ziel -> Alles auf Null
             this.stuckTimer = 0;
             this.anchorX = undefined;
+            this.accumulatedDist = 0;
         }
+    }
+
+    flee(threat, grid) {
+        this.target = null;
+        this.targetTimer = 0;
+
+        // Idealer Fluchtwinkel: direkt weg von der Gefahr
+        let idealFleeAngle = Math.atan2(this.y - threat.y, this.x - threat.x);
+        
+        const testDist = window.SETTINGS.FLEE_TEST_DISTANCE; 
+        let bestAngle = idealFleeAngle;
+        let isPathClear = false;
+
+        const validAngles = [];
+        const step = window.SETTINGS.FLEE_ANGLE_STEP; 
+        const maxOffset = window.SETTINGS.FLEE_MAX_OFFSET;
+
+        // Fächersuche: Wir sammeln alle Winkel, die frei von Hindernissen sind
+        for (let offset = 0; offset <= maxOffset; offset += step) {
+            const anglesToTest = offset === 0 ? [idealFleeAngle] : [idealFleeAngle + offset, idealFleeAngle - offset];
+            
+            for (const testAngle of anglesToTest) {
+                const testX = this.x + Math.cos(testAngle) * testDist;
+                const testY = this.y + Math.sin(testAngle) * testDist;
+
+                // Welt-Grenzen (Spielfeldrand) berücksichtigen
+                const isOutOfBounds = testX < 30 || testX > (window.WORLD_WIDTH || 2000) - 30 || testY < 30 || testY > (window.WORLD_HEIGHT || 1000) - 30;
+                
+                if (!isOutOfBounds) {
+
+                    const obstacles = grid.getEntitiesInArea(testX, testY, 15)
+                        .filter(e => {
+                            // Steine sind immer eine Wand, für alle Tiere
+                            if (e.type === 'stone') return true;
+
+                            // NEU: Pflanzen sind nur für Pflanzenfresser ein Hindernis auf der Flucht.
+                            // Fleischfresser ignorieren sie bei der Wegfindung komplett!
+                            if (e.type === 'plant' && !(this instanceof CarnivoreCell)) return true;
+
+                            return false;
+                        });
+                    
+                    if (obstacles.length === 0) {
+                        validAngles.push(testAngle);
+                    }
+                }
+            }
+        }
+
+        if (validAngles.length > 0) {
+            // Wir suchen den Winkel, der:
+            // 1. So nah wie möglich am "idealen Fluchtwinkel" ist (also weg vom Feind)
+            // 2. Aber WENN mehrere Wege ähnlich gut sind, nehmen wir den, der unserer aktuellen Blickrichtung entspricht
+            let bestScore = Infinity;
+            
+            for (const angle of validAngles) {
+                // Differenz zum idealen Fluchtwinkel (wie weit weicht er von der perfekten Flucht ab?)
+                let diffToIdeal = Math.abs(angle - idealFleeAngle) % (Math.PI * 2);
+                if (diffToIdeal > Math.PI) diffToIdeal = (Math.PI * 2) - diffToIdeal;
+
+                // Differenz zur aktuellen Blickrichtung (wie sehr muss sich das Tier drehen?)
+                let diffToCurrent = Math.abs(angle - this.angle) % (Math.PI * 2);
+                if (diffToCurrent > Math.PI) diffToCurrent = (Math.PI * 2) - diffToCurrent;
+
+                // Score berechnen
+                let score = (diffToIdeal * window.SETTINGS.FLEE_SCORE_IDEAL_WEIGHT) + (diffToCurrent * window.SETTINGS.FLEE_SCORE_CURRENT_WEIGHT);
+                
+                if (score < bestScore) {
+                    bestScore = score;
+                    bestAngle = angle;
+                }
+            }
+            isPathClear = true;
+        } else {
+            // Wenn wirklich ALLES blockiert ist (Sackgasse), wollen wir zumindest
+            // NICHT in den Gegner rennen. 
+            // idealFleeAngle ist WEG vom Gegner.
+            // Der alte Code (idealFleeAngle + Math.PI) hat den Winkel um 180 Grad gedreht,
+            // was bedeutet, er hat ZUM Gegner gezeigt.
+            bestAngle = idealFleeAngle; 
+            
+            // Notfall-Wackeln, um sich aus einer engen Ecke zu befreien
+            bestAngle += (Math.random() - 0.5) * Math.PI; 
+        }
+
+        // Ziel für die Bewegung setzen.
+        const fleeTarget = {
+            x: this.x + Math.cos(bestAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE,
+            y: this.y + Math.sin(bestAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE
+        };
+
+        this.currentFleeTarget = fleeTarget; // Für Debug-Linien speichern
+
+        this.move(fleeTarget, true);
     }
 }
 
@@ -485,8 +654,7 @@ class HerbivoreCell extends AnimalCell {
         this.metabolismMultiplier = 1.0;
         this.target = null;
         this.threat = null;
-        // NEU: Hier stellst du ein, wie oft Pflanzenfresser werfen dürfen (z.B. 3 Mal)
-        this.maxReproductions = 2;
+        this.maxReproductions = window.SETTINGS.HERB_MAX_REPRODUCTIONS;
     }
 
     getMetabolismMultiplier() {
@@ -500,7 +668,18 @@ class HerbivoreCell extends AnimalCell {
         const status = this.updateBase(grid);
         if (status !== 'moving') return status;
 
-        const entitiesInArea = grid.getEntitiesInArea(this.x, this.y, this.genome.sightRange * 5);
+        let panicRadius = this.genome.sightRange * window.SETTINGS.FLEE_PANIC_RADIUS_HERBIVORE;
+        
+        // --- HYSTERESE-BONUS ---
+        // Wenn das Tier im letzten Frame bereits auf der Flucht war,
+        // addieren wir den Bonus, damit es nicht sofort aufhört zu fliehen, 
+        // wenn der Räuber nur 1 Pixel außerhalb des normalen Radius ist.
+        if (this.threat) {
+            panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
+        }
+
+        const searchRadius = Math.max(this.genome.sightRange * 5, panicRadius + 50);
+        const entitiesInArea = grid.getEntitiesInArea(this.x, this.y, searchRadius);
 
         // --- NEU: Größen-Check bei der Feinderkennung ---
         const predators = entitiesInArea.filter(e =>
@@ -511,7 +690,6 @@ class HerbivoreCell extends AnimalCell {
 
         this.threat = null;
         let minPredatorDist = Infinity;
-        const panicRadius = this.genome.sightRange * 3;
 
         for (const p of predators) {
             const dx = p.x - this.x;
@@ -524,41 +702,28 @@ class HerbivoreCell extends AnimalCell {
         }
 
         if (this.threat) {
-            this.target = null;
-            this.targetTimer = 0;
-
-            // --- NEU: FLUCHT MIT KOLLISIONS-CHECK ---
-            // Wir berechnen den idealen Fluchtweg
-            let fleeAngle = Math.atan2(this.x - this.threat.x, this.y - this.threat.y);
-
-            // Wir testen, ob der Weg frei ist
-            const testDist = 20;
-            const testX = this.x + Math.cos(fleeAngle) * testDist;
-            const testY = this.y + Math.sin(fleeAngle) * testDist;
-
-            const obstacles = grid.getEntitiesInArea(testX, testY, 10)
-                .filter(e => e.type === 'plant' || e.type === 'stone');
-
-            // Wenn wir gegen eine Wand rennen würden, drehen wir den Fluchtwinkel leicht zur Seite
-            if (obstacles.length > 0) {
-                fleeAngle += Math.PI / 4; // 45 Grad Ausweichmanöver
-            }
-
-            const fleeTarget = {
-                x: this.x + Math.cos(fleeAngle) * 100,
-                y: this.y + Math.sin(fleeAngle) * 100
-            };
-
-            this.move(fleeTarget);
-            this.energy -= 0.05;
+            this.flee(this.threat, grid);
             return status;
+        } else {
+            this.currentFleeTarget = null;
         }
 
         this.checkTargetTimeout();
-        if (!this.target || !this.target.alive) {
-            const plants = entitiesInArea.filter(e => e.type === 'plant' && e.alive);
-            this.target = this.findClosestInSight(plants);
-            this.targetTimer = 0;
+        if ((this.ignoreTargetTimer || 0) <= 0) {
+            // Wir aktualisieren das Ziel regelmäßig (alle 15 Frames) oder wenn wir keins haben
+            if (!this.target || !this.target.alive || this.age % 15 === 0) {
+                const plants = entitiesInArea.filter(e => e.type === 'plant' && e.alive);
+                const newTarget = this.findClosestInSight(plants, this.target);
+                
+                if (newTarget) {
+                    this.target = newTarget;
+                    this.targetTimer = 0;
+                } else if (!this.target || !this.target.alive) {
+                    this.target = null;
+                }
+            }
+        } else {
+            this.target = null;
         }
 
         this.move(this.target);
@@ -579,10 +744,9 @@ class CarnivoreCell extends AnimalCell {
         this.dotColor = `hsl(${hue}, 100%, 60%)`;
 
         this.metabolismMultiplier = 0.8; // Increased from 0.5 to starve faster
-        this.genome.sightRange = 500;
-        this.genome.sightAngle = Math.PI * 0.8;
-        // NEU: Hier stellst du ein, wie oft Fleischfresser werfen dürfen (z.B. 1 oder 2 Mal)
-        this.maxReproductions = 50;
+        this.genome.sightRange = window.SETTINGS.CARN_SIGHT_RANGE_MULTIPLIER;
+        this.genome.sightAngle = window.SETTINGS.CARN_SIGHT_ANGLE;
+        this.maxReproductions = window.SETTINGS.CARN_MAX_REPRODUCTIONS;
         this.size = 3;
     }
 
@@ -601,8 +765,13 @@ class CarnivoreCell extends AnimalCell {
         const aggroRadius = this.size * 4 + 50;
 
         // --- NEU: Fluchtradius gekoppelt an Aggro-Radius ---
-        // Er sieht die Bedrohung nur etwas weiter (hier: 20% weiter) als seinen eigenen Angriffsradius
-        const panicRadius = aggroRadius * 2;
+        // Er sieht die Bedrohung nun DEUTLICH weiter weg (wird in den Settings eingestellt)
+        let panicRadius = aggroRadius * window.SETTINGS.FLEE_PANIC_RADIUS_CARNIVORE;
+
+        // --- HYSTERESE-BONUS ---
+        if (this.threat) {
+            panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
+        }
 
         // Suchradius für das Grid (das größte von beiden)
         const entitiesInArea = grid.getEntitiesInArea(this.x, this.y, panicRadius + 50);
@@ -635,31 +804,13 @@ class CarnivoreCell extends AnimalCell {
             }
 
             if (this.threat) {
-                this.target = null;
-                this.targetTimer = 0;
-
-                let fleeAngle = Math.atan2(this.y - this.threat.y, this.x - this.threat.x);
-
-                const testDist = 20;
-                const testX = this.x + Math.cos(fleeAngle) * testDist;
-                const testY = this.y + Math.sin(fleeAngle) * testDist;
-
-                const obstacles = grid.getEntitiesInArea(testX, testY, 10)
-                    .filter(e => e.type === 'plant' || e.type === 'stone');
-
-                if (obstacles.length > 0) {
-                    fleeAngle += Math.PI / 4;
-                }
-
-                const fleeTarget = {
-                    x: this.x + Math.cos(fleeAngle) * 100,
-                    y: this.y + Math.sin(fleeAngle) * 100
-                };
-
-                this.move(fleeTarget);
-                this.energy -= 0.05;
+                this.flee(this.threat, grid);
                 return status;
+            } else {
+                this.currentFleeTarget = null;
             }
+        } else {
+            this.currentFleeTarget = null;
         }
 
         // --- 2. REVIERVERHALTEN (Alpha-Kämpfe) ---
@@ -702,28 +853,38 @@ class CarnivoreCell extends AnimalCell {
         }
 
         // --- 3. NORMALE JAGD ---
-        if ((this.ignoreTargetTimer || 0) <= 0 && (!this.target || !this.target.alive)) {
-            // Für die Jagd schauen wir wieder etwas weiter
-            const huntEntities = grid.getEntitiesInArea(this.x, this.y, this.genome.sightRange * 5);
+        if ((this.ignoreTargetTimer || 0) <= 0) {
+            // Wir suchen regelmäßig (alle 10 Frames) oder wenn wir kein Ziel haben
+            if (!this.target || !this.target.alive || this.age % 10 === 0) {
+                // Für die Jagd schauen wir wieder etwas weiter
+                const huntEntities = grid.getEntitiesInArea(this.x, this.y, this.genome.sightRange * 5);
 
-            const herbivores = huntEntities.filter(e =>
-                e instanceof HerbivoreCell &&
-                e.alive &&
-                e.size <= this.size
-            );
-            this.target = this.findSlowestInSight(herbivores);
-
-            if (!this.target) {
-                const smallerCarnivores = huntEntities.filter(e =>
-                    e instanceof CarnivoreCell &&
+                const herbivores = huntEntities.filter(e =>
+                    e instanceof HerbivoreCell &&
                     e.alive &&
-                    e !== this &&
-                    e.size < this.size
+                    e.size <= this.size
                 );
-                this.target = this.findSlowestInSight(smallerCarnivores);
-            }
+                let newTarget = this.findSlowestInSight(herbivores, grid, this.target);
 
-            this.targetTimer = 0;
+                if (!newTarget) {
+                    const smallerCarnivores = huntEntities.filter(e =>
+                        e instanceof CarnivoreCell &&
+                        e.alive &&
+                        e !== this &&
+                        e.size < this.size
+                    );
+                    newTarget = this.findSlowestInSight(smallerCarnivores, grid, this.target);
+                }
+
+                if (newTarget) {
+                    this.target = newTarget;
+                    this.targetTimer = 0;
+                } else if (!this.target || !this.target.alive) {
+                    this.target = null;
+                }
+            }
+        } else {
+            this.target = null;
         }
 
         this.move(this.target);
@@ -761,34 +922,44 @@ class TailSegment extends BaseCell {
             const targetDist = this.parent.size + 2;
             let angle = Math.atan2(dy, dx);
 
-            // Das unsichtbare Rückgrat kerzengerade hinterherziehen
             if (dist > targetDist) {
                 this.spineX = targetX - Math.cos(angle) * targetDist;
                 this.spineY = targetY - Math.sin(angle) * targetDist;
             }
 
-            // NEU: Stimmgabel-Effekt (erst biegen, dann parallel!)
+            // --- NEU: Wiggle-Effekt berechnen ---
+            // 1. Wir suchen das Haupt-Tier, um seinen Takt (wigglePhase) abzufragen
+            let rootAnimal = this.parent;
+            while (rootAnimal && rootAnimal.type === 'tail') {
+                rootAnimal = rootAnimal.parent;
+            }
+
+            let wiggleOffset = 0;
+            if (rootAnimal && rootAnimal.wigglePhase !== undefined) {
+                // Versatz der Welle: Sorgt dafür, dass die Welle nach hinten durchläuft
+                const phaseDelay = this.depth * 0.6;
+                // Amplitude: Schwanzspitze wackelt stärker als der Ansatz
+                const amplitude = this.depth * 1.2;
+
+                wiggleOffset = Math.sin(rootAnimal.wigglePhase - phaseDelay) * amplitude;
+            }
+
+            const perpAngle = angle + Math.PI / 2; // 90 Grad Winkel zur Wirbelsäule
+
+            // --- NEU: Wiggle auf die Position anwenden ---
             if (this.branch !== 0) {
-                // Nach dem 8. Segment wächst der Abstand zur Mitte nicht mehr weiter
                 const spreadStopDepth = 8;
                 const effectiveDepth = Math.min(this.depth, spreadStopDepth);
-
-                // Wie viele Segmente sind wir schon über dem Spaltpunkt (Tiefe 3)?
-                // Verhindert negative Werte, falls die Tiefe kleiner als 3 ist.
                 const branchProgress = Math.max(0, effectiveDepth - 3);
-
-                // DIE MAGIE: Math.sqrt zieht die Glieder in einem sanften Bogen nach außen!
-                // Der Faktor 4.5 (statt vorher 3.5 linear) macht den Schwanz insgesamt viel enger.
                 const spread = Math.sqrt(branchProgress) * 4.5;
 
-                const perpAngle = angle + Math.PI / 2; // 90 Grad Winkel zur Wirbelsäule
-
-                this.x = this.spineX + Math.cos(perpAngle) * (spread * this.branch);
-                this.y = this.spineY + Math.sin(perpAngle) * (spread * this.branch);
+                // Wir addieren den wiggleOffset zur bestehenden Stimmgabel-Spreizung
+                this.x = this.spineX + Math.cos(perpAngle) * ((spread * this.branch) + wiggleOffset);
+                this.y = this.spineY + Math.sin(perpAngle) * ((spread * this.branch) + wiggleOffset);
             } else {
-                // Ein gerader Schwanz liegt exakt auf dem Rückgrat
-                this.x = this.spineX;
-                this.y = this.spineY;
+                // Ein gerader Schwanz liegt auf dem Rückgrat PLUS dem Wiggle-Offset
+                this.x = this.spineX + Math.cos(perpAngle) * wiggleOffset;
+                this.y = this.spineY + Math.sin(perpAngle) * wiggleOffset;
             }
         }
     }

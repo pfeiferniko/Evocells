@@ -1,13 +1,41 @@
 const canvas = document.getElementById('simulationCanvas');
 const ctx = canvas.getContext('2d');
 
-let WORLD_WIDTH = 2000;
-let WORLD_HEIGHT = 1000;
-const GRID_SIZE = 50;
+let WORLD_WIDTH = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
+let WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
+const GRID_SIZE = window.SETTINGS.GRID_SIZE || 50;
 let grid;
 
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
+
+// --- PLANKTON / WASSERSTAUB ---
+const PLANKTON_COUNT = 150; // Anzahl der Partikel
+const planktons = [];
+
+// --- PARTIKEL-SYSTEM (Fress-Krümel) ---
+let particles = [];
+
+// --- DEBUG-LINIEN LOGIK ---
+let showDebugLines = false;
+const debugBtn = document.getElementById('debug-btn');
+
+// Setze den initialen Text passend zur Variable
+if (debugBtn) {
+    debugBtn.innerText = "Debug-Linien: AUS";
+    debugBtn.style.color = "#555";
+    
+    debugBtn.addEventListener('click', () => {
+        showDebugLines = !showDebugLines;
+        if (showDebugLines) {
+            debugBtn.innerText = "Debug-Linien: AN";
+            debugBtn.style.color = "#999";
+        } else {
+            debugBtn.innerText = "Debug-Linien: AUS";
+            debugBtn.style.color = "#555";
+        }
+    });
+}
 
 // --- VOLLBILD-LOGIK ---
 const fullscreenBtn = document.getElementById('fullscreen-btn');
@@ -39,41 +67,115 @@ if (fullscreenBtn) {
     });
 }
 
+// Wir definieren alle unsere gewünschten Stufen in einer einfachen Liste
+const pixelModes = [
+    { label: "AUS", factor: 1.0 },
+    { label: "0.8", factor: 0.8 },
+    { label: "0.6", factor: 0.6 },
+    { label: "0.5", factor: 0.5 },
+    { label: "0.4", factor: 0.4 },
+    { label: "0.3", factor: 0.3 },
+    { label: "0.2", factor: 0.2 }
+];
+
+let currentPixelMode = 2; // Startet bei Index 0 (AUS)
+const pixelBtn = document.getElementById('pixel-btn');
+
+if (pixelBtn) {
+    // Setzt den Text direkt beim Start auf den richtigen Wert ("Pixel: 0.6")
+    pixelBtn.innerText = `Pixel: ${pixelModes[currentPixelMode].label}`;
+
+    pixelBtn.addEventListener('click', () => {
+        currentPixelMode = (currentPixelMode + 1) % pixelModes.length;
+        const mode = pixelModes[currentPixelMode];
+
+        pixelBtn.innerText = `Pixel: ${mode.label}`;
+        applyResolution(mode.factor);
+    });
+}
+
+// Neue Funktion zum Anwenden der Auflösung
+function applyResolution(factor) {
+    // 1. Interne Canvas-Größe ändern
+    canvas.width = WORLD_WIDTH * factor;
+    canvas.height = WORLD_HEIGHT * factor;
+
+    // 2. Den Pinsel-Maßstab anpassen
+    // Wichtig: setTransform stellt sicher, dass alte Skalierungen gelöscht werden
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(factor, factor);
+
+    // 3. CSS-Filter umschalten
+    if (factor === 1.0) {
+        canvas.classList.remove('pixel-mode');
+    } else {
+        canvas.classList.add('pixel-mode');
+    }
+}
+
+// Hilfsfunktion, um schnell neue Krümel zu erzeugen
+function createParticles(x, y, color, count, baseSize = null) {
+    for (let i = 0; i < count; i++) {
+
+        // Wenn eine baseSize übergeben wurde, skalieren wir den Krümel.
+        // Ansonsten nehmen wir den Standard für Pflanzen (1 bis 3 Pixel).
+        let pSize = baseSize ? (baseSize * 0.5 + Math.random() * baseSize) : (Math.random() * 2 + 1);
+
+        particles.push({
+            x: x + (Math.random() - 0.5) * 10,
+            y: y + (Math.random() - 0.5) * 10,
+            vx: (Math.random() - 0.5) * 4,
+            vy: (Math.random() - 0.5) * 4,
+            life: 1.0,
+            decay: 0.02 + Math.random() * 0.03,
+            color: color,
+            size: pSize
+        });
+    }
+}
+
 function init() {
     console.log("Initializing...");
     startTime = Date.now(); // NEU: Stoppuhr starten
 
-    // In main.js - init()
     const isPortrait = window.innerHeight > window.innerWidth;
 
-    // WICHTIG: Setze diese Werte VOR der Generierung der Objekte
     if (isPortrait) {
-        // Canvas-Größe für Hochkant
-        canvas.width = 1000;
-        canvas.height = 2000;
-
-        // Globale Variablen für deine Simulations-Logik
-        window.WORLD_WIDTH = 1000;
-        window.WORLD_HEIGHT = 2000;
-        WORLD_WIDTH = 1000;
-        WORLD_HEIGHT = 2000;
-
+        WORLD_WIDTH = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
+        WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
     } else {
-        canvas.width = 2000;
-        canvas.height = 1000;
-        window.WORLD_WIDTH = 2000;
-        window.WORLD_HEIGHT = 1000;
-        WORLD_WIDTH = 2000;
-        WORLD_HEIGHT = 1000;
+        WORLD_WIDTH = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
+        WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
     }
 
+    // Globale Referenzen für andere Klassen
+    window.WORLD_WIDTH = WORLD_WIDTH;
+    window.WORLD_HEIGHT = WORLD_HEIGHT;
+
+    // Nutze die neue Funktion zum ersten Mal (Standard: 1.0)
+    applyResolution(pixelModes[currentPixelMode].factor);
+
     grid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
+
+    // Wasserstaub generieren
+    for (let i = 0; i < PLANKTON_COUNT; i++) {
+        planktons.push({
+            x: Math.random() * WORLD_WIDTH,
+            y: Math.random() * WORLD_HEIGHT,
+            baseVx: (Math.random() - 0.5) * 0.2, // Sehr langsame Grunddrift
+            baseVy: (Math.random() - 0.5) * 0.2,
+            size: Math.random() * 1.5 + 0.5,     // Winzig (0.5 bis 2 Pixel)
+            opacity: Math.random() * 0.2 + 0.05, // Sehr dezent (5% bis 25% sichtbar)
+            wobbleSpeed: Math.random() * 0.002 + 0.001, // Wie schnell sie wackeln
+            wobbleOffset: Math.random() * Math.PI * 2   // Asynchrones Wackeln
+        });
+    }
 
     // 1. Steine generieren und in einer extra Liste kurz merken
     const stones = [];
 
     // 3 SUPER-Steine
-    for (let i = 0; i < 2; i++) {
+    for (let i = 0; i < window.SETTINGS.SPAWN_SUPER_STONES; i++) {
         const spawnX = Math.max(60, Math.random() * (WORLD_WIDTH - 60));
         const spawnY = Math.max(60, Math.random() * (WORLD_HEIGHT - 60));
         const size = 20 + Math.random() * 30;
@@ -83,7 +185,7 @@ function init() {
     }
 
     // 7 NORMALE Steine
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < window.SETTINGS.SPAWN_NORMAL_STONES; i++) {
         const spawnX = Math.max(60, Math.random() * (WORLD_WIDTH - 60));
         const spawnY = Math.max(60, Math.random() * (WORLD_HEIGHT - 60));
         const size = 10 + Math.random() * 30;
@@ -110,20 +212,19 @@ function init() {
     });
 
     // 3. Tiere generieren
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < window.SETTINGS.SPAWN_HERBIVORES; i++) {
         const initialGenome = new Genome();
-        // Pflanzenfresser: Basis-Speed ca. 1.0 (schwankt zwischen 0.9 und 1.1)
-        initialGenome.speed = 0.9 + Math.random() * 0.2;
+        initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
+        initialGenome.maxSize = 7 + Math.random() * 2;
 
         let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         entities.push(herbivore);
         addInitialTail(herbivore, entities);
     }
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < window.SETTINGS.SPAWN_CARNIVORES; i++) {
         const initialGenome = new Genome();
-        // Fleischfresser: Basis-Speed ca. 1.3 (schwankt zwischen 1.2 und 1.4) -> Etwas schneller!
-        initialGenome.speed = 1.2 + Math.random() * 0.2;
-        initialGenome.maxSize = 11 + Math.random() * 2;
+        initialGenome.speed = window.SETTINGS.CARN_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.CARN_SPEED_VARIANCE * 2;
+        initialGenome.maxSize = 9 + Math.random() * 2;
 
         let carnivore = new CarnivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         carnivore.size = 3;
@@ -154,7 +255,7 @@ function update() {
     const newEntities = [];
     const survivingEntities = [];
 
-    const isStartup = (Date.now() - startTime) < 4000;
+    const isStartup = (Date.now() - startTime) < window.SETTINGS.STARTUP_PHASE_DURATION;
 
     entities.forEach(e => {
         let isAlive = true;
@@ -214,15 +315,14 @@ function update() {
                     // 1. Aktuelle Anzahl der Pflanzenfresser zählen
                     const herbivoreCount = entities.filter(ent => ent instanceof HerbivoreCell && ent.alive).length;
 
-                    if (herbivoreCount <= 30) {
+                    if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_START) {
                         numChildren = 10;
-                    } else if (herbivoreCount <= 100) {
+                    } else if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX) {
                         // Bereich 30 bis 100: Von 10 runter auf 1 Kind
-                        // Die Differenz bei den Tieren ist 70 (100 - 30)
-                        // Die Differenz bei den Kindern ist 9 (10 - 1)
-                        numChildren = 10 - ((herbivoreCount - 30) / 70) * 9;
+                        const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
+                        numChildren = 10 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
                     } else {
-                        numChildren = 1; // Minimum bei Überbevölkerung (alles ab 100)
+                        numChildren = 1; // Minimum bei Überbevölkerung
                     }
 
                     // Da wir keine halben Kinder haben können:
@@ -232,8 +332,7 @@ function update() {
                     const carnivoreCount = entities.filter(ent => ent instanceof CarnivoreCell && ent.alive).length;
 
                     // Wenn es mehr als 8 Räuber auf der Karte gibt, bekommen sie gar keine Kinder mehr!
-                    // (Du kannst die Zahl 8 nach Belieben anpassen)
-                    if (carnivoreCount >= 8) {
+                    if (carnivoreCount >= window.SETTINGS.MAX_CARNIVORES_FOR_BIRTH) {
                         numChildren = 0;
                     } else {
                         numChildren = 1;
@@ -314,6 +413,10 @@ function update() {
                                 other.size -= biteAmount; // Pflanze wird langsam kleiner
                                 e.energy += biteAmount; // Energie wird langsam hochgezählt
 
+                                if (Math.random() < 0.2) {
+                                    createParticles(other.x, other.y, other.color, 1);
+                                }
+
                                 // Energie am Maximum kappen
                                 e.energy = Math.min(e.getMaxEnergy(), e.energy);
 
@@ -329,17 +432,30 @@ function update() {
                         }
                         // --- NEU: Carnivore beißt in einen Schwanz ---
                         else if (e instanceof CarnivoreCell && other.type === 'tail' && rootAnimal && e.size >= rootAnimal.size) {
-
-                            // Auch die Bremswirkung ist sanfter, sonst gefriert die Beute sofort ein
-                            rootAnimal.speedMultiplier = Math.max(0.1, rootAnimal.speedMultiplier - 0.02);
-
+                            if (e.target === other) {
+                                // Auch die Bremswirkung ist sanfter, sonst gefriert die Beute sofort ein
+                                rootAnimal.speedMultiplier = Math.max(0.1, rootAnimal.speedMultiplier - 0.02);
+                            }
                         }
                         // Carnivore eats Herbivore
                         else if (e instanceof CarnivoreCell && other instanceof HerbivoreCell && e.size >= other.size) {
                             other.energy -= 1;
                             other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
 
+                            // --- NEU: Dynamische Krümelgröße beim Knabbern ---
+                            if (Math.random() < 0.4) {
+                                // Anzahl: Je größer das Opfer, desto mehr Krümel. (Mindestens 1)
+                                const pCount = Math.max(1, Math.floor(other.size * 0.3));
+
+                                // Größe: Je dicker das Opfer, desto größer die Brocken.
+                                const pSize = Math.max(2, other.size * 0.3);
+
+                                createParticles(other.x, other.y, other.color, pCount, pSize);
+                            }
+
                             e.energy += 0.05;
+                            e.stuckTimer = 0; // STUCK-FIX: Wenn er frisst, steckt er nicht fest
+                            e.accumulatedDist = 0;
 
                             if (other.energy <= 0) {
                                 other.isEaten = true;
@@ -351,6 +467,12 @@ function update() {
                                 if (e.size < e.genome.maxSize) e.size += 0.5;
 
                                 if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
+
+                                // --- NEU: Große Explosion, wenn das Tier komplett gefressen wurde! ---
+                                // Das erzeugt eine kleine Wolke, die das Ende des Tieres signalisiert.
+                                const finalPuffCount = Math.floor(other.size * 2);
+                                const finalPuffSize = other.size * 0.4;
+                                createParticles(other.x, other.y, other.color, finalPuffCount, finalPuffSize);
                             }
                             eaten = true;
                         }
@@ -359,29 +481,38 @@ function update() {
                             if (e.target === other) {
                                 other.energy -= 1;
                                 other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
+                                other.graceTimer = 60; // NEU: 1 Sekunde Schutz vor Verhungern
+
+                                // --- NEU: Dynamische Krümelgröße beim Knabbern ---
+                                if (Math.random() < 0.4) {
+                                    // Anzahl: Je größer das Opfer, desto mehr Krümel. (Mindestens 1)
+                                    const pCount = Math.max(1, Math.floor(other.size * 0.3));
+
+                                    // Größe: Je dicker das Opfer, desto größer die Brocken.
+                                    const pSize = Math.max(2, other.size * 0.3);
+
+                                    createParticles(other.x, other.y, other.color, pCount, pSize);
+                                }
+
                                 e.energy += 0.05;
+                                e.stuckTimer = 0; // STUCK-FIX: Wenn er frisst, steckt er nicht fest
+                                e.accumulatedDist = 0;
 
                                 if (other.energy <= 0) {
                                     other.isEaten = true;
                                     other.alive = false;
                                     if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
-                                    // --- NEU: VERLETZUNGS-LOGIK BEIM KAMPF ---
-                                    // Der Sieger verliert massiv Energie durch den Kampf mit einem anderen Räuber!
-                                    // Je größer das Opfer war, desto mehr Schaden nimmt der Sieger.
-                                    const combatDamage = other.size * 3;
-                                    e.energy -= combatDamage;
+                                    // --- NEU: Große Explosion, wenn das Tier komplett gefressen wurde! ---
+                                    // Das erzeugt eine kleine Wolke, die das Ende des Tieres signalisiert.
+                                    const finalPuffCount = Math.floor(other.size * 2);
+                                    const finalPuffSize = other.size * 0.4;
+                                    createParticles(other.x, other.y, other.color, finalPuffCount, finalPuffSize);
 
-                                    // Wenn der Sieger den Kampf zwar gewinnt, aber an seinen Verletzungen stirbt:
-                                    if (e.energy <= 0) {
-                                        e.alive = false;
-                                        if (e.tailSegments) e.tailSegments.forEach(t => t.alive = false);
-                                    } else {
-                                        // Nur wenn er überlebt, bekommt er Nahrung, aber WENIGER als bei einem Pflanzenfresser
-                                        e.energy = Math.min(e.getMaxEnergy(), e.energy + 30);
-                                        // Und er wächst nur noch minimal durch Kannibalismus
-                                        if (e.size < e.genome.maxSize) e.size += 0.1;
-                                    }
+                                    // Nur wenn er überlebt, bekommt er Nahrung, aber WENIGER als bei einem Pflanzenfresser
+                                    e.energy = Math.min(e.getMaxEnergy(), e.energy + 30);
+                                    // Und er wächst nur noch minimal durch Kannibalismus
+                                    if (e.size < e.genome.maxSize) e.size += 0.1;
                                 }
                                 eaten = true;
                             }
@@ -432,8 +563,8 @@ function update() {
             // Energy consumption & instant death
             if (e.energy <= 0) {
 
-                // Spawne IMMER eine Super-Pflanze, wenn es verhungert ist
-                if (!e.isEaten && Math.random() < 0.3) { // 30% Chance
+                // Spawne IMMER eine Super-Pflanze, wenn ein PFLANZENFRESSER verhungert ist
+                if (e instanceof HerbivoreCell && !e.isEaten && Math.random() < 0.3) { // 30% Chance
                     const superPlant = new PlantSegment(e.x, e.y, null, true);
                     superPlant.color = '#00FFFF';
                     superPlant.isTip = true;
@@ -586,30 +717,81 @@ function update() {
 
         if (e.x < margin) {
             e.x = margin;
-            if (e.type === 'animal') e.angle = Math.PI - e.angle;
+            if (e.type === 'animal') { e.angle = Math.PI - e.angle; e.target = null; e.ignoreTargetTimer = 20; }
         }
         if (e.x > WORLD_WIDTH - margin) {
             e.x = WORLD_WIDTH - margin;
-            if (e.type === 'animal') e.angle = Math.PI - e.angle;
+            if (e.type === 'animal') { e.angle = Math.PI - e.angle; e.target = null; e.ignoreTargetTimer = 20; }
         }
         if (e.y < margin) {
             e.y = margin;
-            if (e.type === 'animal') e.angle = -e.angle;
+            if (e.type === 'animal') { e.angle = -e.angle; e.target = null; e.ignoreTargetTimer = 20; }
         }
         if (e.y > WORLD_HEIGHT - margin) {
             e.y = WORLD_HEIGHT - margin;
-            if (e.type === 'animal') e.angle = -e.angle;
+            if (e.type === 'animal') { e.angle = -e.angle; e.target = null; e.ignoreTargetTimer = 20; }
         }
 
         if (isAlive && e.alive !== false) survivingEntities.push(e);
     });
 
     entities = [...survivingEntities.filter(ent => ent.alive !== false), ...newEntities];
+
+    // Krümel bewegen und verblassen lassen
+    for (let i = particles.length - 1; i >= 0; i--) {
+        let p = particles[i];
+        p.x += p.vx;
+        p.y += p.vy;
+        p.life -= p.decay;
+
+        // Wasserwiderstand: Die Partikel werden schnell langsamer
+        p.vx *= 0.85;
+        p.vy *= 0.85;
+
+        // Wenn sie unsichtbar sind, löschen wir sie aus dem Array
+        if (p.life <= 0) {
+            particles.splice(i, 1);
+        }
+    }
 }
 
 function draw() {
-    ctx.fillStyle = 'black';
+    // Erzeugt einen Verlauf von der Mitte nach außen
+    const bgGradient = ctx.createRadialGradient(
+        WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 0,
+        WORLD_WIDTH / 2, WORLD_HEIGHT / 2, Math.max(WORLD_WIDTH, WORLD_HEIGHT) * 0.8
+    );
+    bgGradient.addColorStop(0, '#060810'); // Mitte: Ein sehr tiefes, dunkles Blau-Grau
+    bgGradient.addColorStop(1, '#000000'); // Rand: Tiefschwarz
+
+    ctx.fillStyle = bgGradient;
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+
+    // --- NEU: PLANKTON ZEICHNEN UND BEWEGEN ---
+    ctx.fillStyle = 'white'; // Die Farbe der Partikel
+
+    planktons.forEach(p => {
+        // Sanftes Driften + leichtes Wackeln durch Sinus
+        p.x += p.baseVx + Math.sin(Date.now() * p.wobbleSpeed + p.wobbleOffset) * 0.2;
+        p.y += p.baseVy;
+
+        // Nahtloser Übergang am Spielfeldrand (Pac-Man-Effekt)
+        // Das ist extrem ressourcenschonend, da wir keine neuen Arrays/Objekte erzeugen müssen!
+        if (p.x < 0) p.x = WORLD_WIDTH;
+        if (p.x > WORLD_WIDTH) p.x = 0;
+        if (p.y < 0) p.y = WORLD_HEIGHT;
+        if (p.y > WORLD_HEIGHT) p.y = 0;
+
+        // Partikel zeichnen
+        ctx.globalAlpha = p.opacity;
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    ctx.globalAlpha = 1.0; // WICHTIG: Alpha für die restlichen Objekte zurücksetzen!
+    // ------------------------------------------
+
 
     // 1. Durchlauf: Hintergrund-Elemente (Sichtfenster, Pflanzen und Schwänze)
     entities.forEach(e => {
@@ -631,25 +813,40 @@ function draw() {
 
         // Pflanzen, Steine und Schwänze
         if (e.type === 'plant' || e.type === 'tail' || e.type === 'stone') {
-
-            ctx.save(); // Kontext speichern
+            ctx.save();
             if (e.type === 'plant') {
                 ctx.globalAlpha = e.opacity;
             }
 
+            // NEU: Pulsieren für Super-Steine berechnen
+            let drawSize = e.size;
+            if (e.type === 'plant') {
+                // Rhythmus: Date.now() * 0.002 bestimmt die Geschwindigkeit
+                // * 0.15 bestimmt die Stärke (15% größer/kleiner)
+                const pulse = 1.0 + Math.sin((Date.now() * e.pulseSpeed) + e.pulseOffset) * 0.1;
+                drawSize = e.size * pulse;
+            }
+
             ctx.fillStyle = e.color || 'white';
             ctx.beginPath();
-            ctx.arc(e.x, e.y, e.size, 0, Math.PI * 2);
+            // Benutze drawSize statt e.size
+            ctx.arc(e.x, e.y, Math.max(1, drawSize), 0, Math.PI * 2);
             ctx.fill();
-            ctx.restore(); //
+            ctx.restore();
 
             // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen ---
             if (e.type === 'tail' && e.dotColor) {
+                ctx.save(); // Kontext speichern
+
+                // MAGIE: Farben addieren sich auf! Das erzeugt ein starkes Leuchten
+                ctx.globalCompositeOperation = 'lighter';
+
                 ctx.fillStyle = e.dotColor;
                 ctx.beginPath();
-                // Der Punkt ist 40% so groß wie das jeweilige Schwanzsegment
                 ctx.arc(e.x, e.y, Math.max(1, e.size * 0.4), 0, Math.PI * 2);
                 ctx.fill();
+
+                ctx.restore(); // Blending wieder auf normal setzen
             }
         }
     });
@@ -705,30 +902,50 @@ function draw() {
             ctx.restore();
             // --- KOPF ENDE ---
 
+            // --- Debug-Linien für Fluchtverhalten ---
+            if (showDebugLines) {
+                if (e.threat && e.threat.alive) {
+                    // Rote gestrichelte Linie zum Räuber (vor wem flieht es?)
+                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                    ctx.lineWidth = 1;
+                    ctx.setLineDash([5, 5]);
+                    ctx.beginPath();
+                    ctx.moveTo(e.x, e.y);
+                    ctx.lineTo(e.threat.x, e.threat.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]); // Reset
+                }
 
-            // Dünne graue Linie zum Target
-            // if (e.target && e.target.alive) {
-            //     ctx.strokeStyle = 'rgba(50, 50, 50, 0.5)';
-            //     ctx.lineWidth = 1;
-            //     ctx.beginPath();
-            //     ctx.moveTo(e.x, e.y);
-            //     ctx.lineTo(e.target.x, e.target.y);
-            //     ctx.stroke();
-            // }
-
-            // --- Rote gestrichelte Warn-Linie bei Flucht ---
-            // if (e.threat && e.threat.alive) {
-            //     ctx.strokeStyle = 'rgba(255, 0, 0, 0.7)'; // Sichtbares Rot
-            //     ctx.lineWidth = 1;
-            //     ctx.setLineDash([5, 5]); // Macht die Linie gestrichelt
-            //     ctx.beginPath();
-            //     ctx.moveTo(e.x, e.y);
-            //     ctx.lineTo(e.threat.x, e.threat.y);
-            //     ctx.stroke();
-            //     ctx.setLineDash([]); // Reset, damit andere Linien normal bleiben
-            // }
+                if (e.currentFleeTarget) {
+                    // Blaue Linie zum Fluchtziel (wohin will es?)
+                    const angle = Math.atan2(e.currentFleeTarget.y - e.y, e.currentFleeTarget.x - e.x);
+                    ctx.strokeStyle = 'rgba(0, 150, 255, 0.5)'; // Hellblau
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(e.x, e.y);
+                    ctx.lineTo(e.x + Math.cos(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE, e.y + Math.sin(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE);
+                    ctx.stroke();
+                }
+            }
         }
     });
+
+    // 3. Durchlauf: Fress-Krümel zeichnen (ganz im Vordergrund)
+    particles.forEach(p => {
+        ctx.globalAlpha = p.life;
+        ctx.fillStyle = p.color;
+
+        // Lighter Blending lässt auch die Krümel leicht leuchten
+        ctx.globalCompositeOperation = 'lighter';
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        ctx.fill();
+    });
+
+    // Alles auf Standard zurücksetzen für den nächsten Frame
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1.0;
 }
 
 function animate() {

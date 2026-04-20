@@ -8,12 +8,16 @@
 </head>
 <body>
 <div id="game-container">
+    <div id="controls-bar">
+        <button id="pixel-btn">Pixel: AUS</button>
+        <button id="fullscreen-btn">Vollbild</button>
+        <button id="debug-btn">Debug-Linien: AN</button>
+    </div>
+
     <canvas id="simulationCanvas" width="2000" height="1000"></canvas>
 
-    <button id="fullscreen-btn">Vollbild</button>
+    <button id="impressum-btn">Impressum</button>
 </div>
-
-<button id="impressum-btn">Impressum</button>
 
 <div id="impressum-modal" class="hidden">
     <div class="modal-content">
@@ -33,6 +37,7 @@
     </div>
 </div>
 
+<script defer src="js/settings.js"></script>
 <script defer src="js/grid.js"></script>
 <script defer src="js/cell.js"></script>
 <script defer src="js/main.js"></script>
