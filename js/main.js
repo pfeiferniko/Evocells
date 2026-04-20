@@ -78,7 +78,7 @@ const pixelModes = [
     { label: "0.2", factor: 0.2 }
 ];
 
-let currentPixelMode = 2; // Startet bei Index 0 (AUS)
+let currentPixelMode = 3; // Startet bei Index 0 (AUS)
 const pixelBtn = document.getElementById('pixel-btn');
 
 if (pixelBtn) {
