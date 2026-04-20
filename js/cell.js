@@ -200,32 +200,32 @@ class AnimalCell extends BaseCell {
             this.originalSizeBeforeBirth = this.size;
         }
 
-        // --- ÜBERARBEITETE GEBURTS-ANIMATION (Anschwellen) ---
+// --- ÜBERARBEITETE GEBURTS-ANIMATION (Anschwellen) ---
         if (this.reproducing) {
             this.reproTimer++;
 
             const progress = this.reproTimer / reproFrames; // 0.0 bis 1.0
 
-            // 1. KEINE Drehung mehr. Nur ein ganz leichtes,
-            // biologisches Zittern des Winkels.
-            this.angle += (Math.random() - 0.5) * 0.02;
+            // 1. Das Tier bleibt KOMPLETT stehen. Keine Drehung, kein Rutschen mehr.
+            // Die x/y Position bleibt exakt, wo sie ist.
 
-            // 2. Das Anschwellen berechnen.
-            // Wir nutzen eine Sinus-Kurve, damit es weich anschwillt.
-            // Am Höhepunkt (Mitte der Zeit) ist es 1.5x so groß.
-            // Formel: Normalgröße + (Sinus-Welle von 0 auf 1 auf 0) * 50% Bonus
+            // 2. Das Anschwellen berechnen (Dezente 25% größer)
             if (this.originalSizeBeforeBirth) {
                 const bloatFactor = 1.0 + (Math.sin(progress * Math.PI) * 0.25);
                 this.size = this.originalSizeBeforeBirth * bloatFactor;
             }
 
-            // 3. Fast keine Vorwärtsbewegung mehr.
-            // Sie "konzentriert" sich auf die Geburt.
-            const danceSpeed = this.originalSizeBeforeBirth * 0.05;
-            this.x += Math.cos(this.angle) * danceSpeed;
-            this.y += Math.sin(this.angle) * danceSpeed;
+            // --- NEU: Der Schwanz zappelt während der Geburt weiter! ---
+            // Wir lassen das Tier etwas schneller und unruhiger wackeln ("Wehen"),
+            // aber ohne dass es sich von der Stelle bewegt.
+            const personalMultiplier = this.wiggleSpeedMultiplier || 1.0;
+            const contractionSpeed = 0.2 * personalMultiplier; // Unruhiges Zappeln
 
-            // 4. Zusätzlicher Energieverbrauch durch die Anstrengung (Optional)
+            // Stoßdämpfer-Logik für einen weichen Übergang vom Schwimmen in die Wehen
+            this.currentWiggleSpeed += (contractionSpeed - this.currentWiggleSpeed) * 0.1;
+            this.wigglePhase += this.currentWiggleSpeed * 0.3;
+
+            // 3. Zusätzlicher Energieverbrauch durch die Anstrengung
             this.energy -= 0.02;
 
             // --- MOMENT DER GEBURT ---
@@ -649,7 +649,9 @@ class HerbivoreCell extends AnimalCell {
         this.color = `rgb(${r}, ${g}, ${b})`;
 
         const hue = Math.floor(180 + Math.random() * 120);
-        this.dotColor = `hsl(${hue}, 100%, 60%)`;
+        // Helligkeit auf 20% bis 35% setzen (schön dunkel) und Sättigung minimal runter
+        const lightness = Math.floor(20 + Math.random() * 15);
+        this.dotColor = `hsl(${hue}, 80%, ${lightness}%)`;
 
         this.metabolismMultiplier = 1.0;
         this.target = null;
@@ -741,7 +743,9 @@ class CarnivoreCell extends AnimalCell {
         this.color = `rgb(${r}, ${g}, ${b})`;
 
         const hue = Math.floor(180 + Math.random() * 120);
-        this.dotColor = `hsl(${hue}, 100%, 60%)`;
+        // Helligkeit auf 20% bis 35% setzen (schön dunkel) und Sättigung minimal runter
+        const lightness = Math.floor(20 + Math.random() * 15);
+        this.dotColor = `hsl(${hue}, 80%, ${lightness}%)`;
 
         this.metabolismMultiplier = 0.8; // Increased from 0.5 to starve faster
         this.genome.sightRange = window.SETTINGS.CARN_SIGHT_RANGE_MULTIPLIER;

@@ -842,17 +842,11 @@ function draw() {
 
             // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen ---
             if (e.type === 'tail' && e.dotColor) {
-                ctx.save(); // Kontext speichern
-
-                // MAGIE: Farben addieren sich auf! Das erzeugt ein starkes Leuchten
-                // ctx.globalCompositeOperation = 'lighter';
-
+                // Hier KEIN save(), restore() oder 'lighter' Blending mehr!
                 ctx.fillStyle = e.dotColor;
                 ctx.beginPath();
                 ctx.arc(e.x, e.y, Math.max(1, e.size * 0.4), 0, Math.PI * 2);
                 ctx.fill();
-
-                ctx.restore(); // Blending wieder auf normal setzen
             }
         }
     });
