@@ -1,5 +1,5 @@
 const canvas = document.getElementById('simulationCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false });
 
 let WORLD_WIDTH = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
 let WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
@@ -660,14 +660,7 @@ function update() {
                 // Wachstum nur, wenn Platz ist (<= 3 Pflanzen)
                 if (plantNeighbors.length <= 10) {
                     e.isTip = false;
-
                     const child = new PlantSegment(spawnX, spawnY, e, e.isSuper);
-
-                    // --- Eigenschaften vererben ---
-                    child.color = e.color;
-                    child.maxSize = e.maxSize; // Vererbung der individuellen Maximalgröße
-                    child.opacity = e.opacity; // Vererbung der Transparenz
-
                     newEntities.push(child);
                 }
             }
@@ -799,7 +792,7 @@ function draw() {
         if (e.type === 'plant' || e.type === 'tail' || e.type === 'stone') {
             ctx.save();
             if (e.type === 'plant') {
-                ctx.globalAlpha = e.opacity;
+                //ctx.globalAlpha = e.opacity;
             }
 
             // NEU: Pulsieren für Super-Steine berechnen

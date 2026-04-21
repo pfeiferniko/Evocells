@@ -43,8 +43,17 @@ class PlantSegment extends BaseCell {
             // Normale Pflanzen: Fixe Größe
             this.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL;
         }
-        this.color = isSuper ? '#b200ff' : 'green'; // Lila für Super, Grün für Normal
-        this.opacity = 0.7 + Math.random() * 0.3;
+
+        if (this.isSuper) {
+            // Super-Pflanze: Lila (Farbton 282), Helligkeit variiert zufällig zwischen 35% und 55%
+            const lightness = Math.floor(35 + Math.random() * 20);
+            this.color = `hsl(282, 100%, ${lightness}%)`;
+        } else {
+            // Normale Pflanze: Grün (Farbton schwankt minimal zwischen 110 und 130), Helligkeit zwischen 25% und 45%
+            const hue = Math.floor(110 + Math.random() * 20);
+            const lightness = Math.floor(25 + Math.random() * 20);
+            this.color = `hsl(${hue}, 90%, ${lightness}%)`;
+        }
 
         this.parent = parent;
         this.age = 0;
