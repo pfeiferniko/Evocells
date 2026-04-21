@@ -442,13 +442,13 @@ function update() {
                         else if (e instanceof CarnivoreCell && other.type === 'tail' && rootAnimal && e.size >= rootAnimal.size) {
                             if (e.target === other) {
                                 // Auch die Bremswirkung ist sanfter, sonst gefriert die Beute sofort ein
-                                rootAnimal.speedMultiplier = Math.max(0.1, rootAnimal.speedMultiplier - 0.02);
+                                rootAnimal.speedMultiplier = Math.max(0.02, rootAnimal.speedMultiplier - 0.02);
                             }
                         }
                         // Carnivore eats Herbivore
                         else if (e instanceof CarnivoreCell && other instanceof HerbivoreCell && e.size >= other.size) {
                             other.energy -= 1;
-                            other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
+                            other.speedMultiplier = Math.max(0.02, other.speedMultiplier - 0.15);
 
                             // --- NEU: Dynamische Krümelgröße beim Knabbern ---
                             if (Math.random() < 0.4) {
@@ -467,17 +467,17 @@ function update() {
 
                             if (other.energy <= 0) {
                                 other.isEaten = true;
-                                e.energy = Math.min(e.getMaxEnergy(), e.energy + 80);
                                 other.alive = false;
-                                e.energy += Math.floor(other.size * 3);
-
-                                // NEU: Jäger wachsen massiv durch einen Kill (von 0.2 auf 0.5 erhöht)
-                                if (e.size < e.genome.maxSize) e.size += 0.5;
-
                                 if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
-                                // --- NEU: Große Explosion, wenn das Tier komplett gefressen wurde! ---
-                                // Das erzeugt eine kleine Wolke, die das Ende des Tieres signalisiert.
+                                // --- NEU: Energiegewinn basiert rein auf der Beutegröße ---
+                                // 10 Energiepunkte pro Größen-Einheit. Ein ausgewachsenes Tier (Größe 10)
+                                // füllt den Jäger (+100) komplett auf. Ein Baby (Größe 2) gibt nur +20.
+                                const energyGain = other.size * 10;
+                                e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
+
+                                if (e.size < e.genome.maxSize) e.size += 0.5;
+
                                 const finalPuffCount = Math.floor(other.size * 2);
                                 const finalPuffSize = other.size * 0.4;
                                 createParticles(other.x, other.y, other.color, finalPuffCount, finalPuffSize);
@@ -511,16 +511,17 @@ function update() {
                                     other.alive = false;
                                     if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
-                                    // --- NEU: Große Explosion, wenn das Tier komplett gefressen wurde! ---
-                                    // Das erzeugt eine kleine Wolke, die das Ende des Tieres signalisiert.
+                                    // --- NEU: Energiegewinn beim Kannibalismus ---
+                                    // Wir nehmen hier nur Faktor 5 statt 10. Jäger schmecken nicht so gut
+                                    // wie Pflanzenfresser und geben weniger Energie.
+                                    const energyGain = other.size * 5;
+                                    e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
+
+                                    if (e.size < e.genome.maxSize) e.size += 0.1;
+
                                     const finalPuffCount = Math.floor(other.size * 2);
                                     const finalPuffSize = other.size * 0.4;
                                     createParticles(other.x, other.y, other.color, finalPuffCount, finalPuffSize);
-
-                                    // Nur wenn er überlebt, bekommt er Nahrung, aber WENIGER als bei einem Pflanzenfresser
-                                    e.energy = Math.min(e.getMaxEnergy(), e.energy + 30);
-                                    // Und er wächst nur noch minimal durch Kannibalismus
-                                    if (e.size < e.genome.maxSize) e.size += 0.1;
                                 }
                                 eaten = true;
                             }
@@ -775,11 +776,6 @@ function draw() {
         if (p.y < 0) p.y = WORLD_HEIGHT;
         if (p.y > WORLD_HEIGHT) p.y = 0;
 
-        // Partikel zeichnen
-        // ctx.beginPath();
-        // ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        // ctx.fill();
-
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
@@ -814,14 +810,34 @@ function draw() {
 
             ctx.restore();
 
-            // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen ---
+            // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen (Lebensanzeige) ---
             if (e.type === 'tail' && e.dotColor) {
-                // Hier KEIN save(), restore() oder 'lighter' Blending mehr!
-                ctx.fillStyle = e.dotColor;
-                // ctx.beginPath();
-                // ctx.arc(e.x, e.y, Math.max(1, e.size * 0.4), 0, Math.PI * 2);
-                // ctx.fill();
 
+                // 1. Wir klettern den "Baum" hoch, um das Haupt-Tier (Kopf) zu finden
+                let rootAnimal = e.parent;
+                while (rootAnimal && rootAnimal.type === 'tail') {
+                    rootAnimal = rootAnimal.parent;
+                }
+
+                let displayColor = e.dotColor; // Standard: Farbig
+
+                // 2. Lebensanzeige berechnen
+                if (rootAnimal && rootAnimal.tailSegments && typeof rootAnimal.getMaxEnergy === 'function') {
+                    // Das wievielte Glied ist das hier im Schwanz? (0 ist direkt am Körper)
+                    const index = rootAnimal.tailSegments.indexOf(e);
+                    const total = rootAnimal.tailSegments.length;
+
+                    // Energie des Tieres in Prozent (0.0 bis 1.0)
+                    const energyRatio = rootAnimal.energy / rootAnimal.getMaxEnergy();
+
+                    // Wenn die prozentuale Position dieses Punktes größer ist als die aktuelle Energie,
+                    // bedeutet das: Dieser Teil der "Batterie" ist leer -> wir malen ihn weiß!
+                    if ((index / total) >= energyRatio) {
+                        displayColor = 'white'; // oder '#333' für ein ganz dunkles Grau, falls Weiß zu grell ist
+                    }
+                }
+
+                ctx.fillStyle = displayColor;
                 const dotRadius = Math.max(1, e.size * 0.4);
                 ctx.fillRect(e.x - dotRadius, e.y - dotRadius, dotRadius * 2, dotRadius * 2);
             }
@@ -838,26 +854,32 @@ function draw() {
             ctx.rotate(e.angle);
 
             // 1. Der Haupt-Kopf (die Ellipse)
-            // ctx.beginPath();
-            // ctx.ellipse(0, 0, e.size, e.size * 0.7, 0, 0, Math.PI * 2);
-            // ctx.fill();
-            // ctx.closePath();
-
+            ctx.beginPath();
             ctx.fillStyle = e.color || 'white';
 
-            const bodyWidth = e.size;
-            const bodyHeight = e.size * 0.7;
-            ctx.fillRect(-bodyWidth, -bodyHeight, bodyWidth * 2, bodyHeight * 2);
+            if (e instanceof CarnivoreCell) {
+                ctx.ellipse(0, 0, e.size * 1.3, e.size, 0, 0, Math.PI * 2);
+            } else {
+                ctx.ellipse(0, 0, e.size, e.size * 0.7, 0, 0, Math.PI * 2);
+            }
+            ctx.fill();
+            ctx.closePath();
 
             // 2. NEU: Der "Mund" / die Zangen für Fleischfresser
             if (e instanceof CarnivoreCell) {
                 ctx.strokeStyle = '#a00000'; // Ein etwas dunkleres Rot für die Mandibeln
-                ctx.lineWidth = Math.max(2, e.size * 0.15); // Stärke skaliert mit der Größe
+                ctx.lineWidth = Math.max(2, e.size * 0.25); // Stärke skaliert mit der Größe
                 ctx.lineCap = 'round'; // Abgerundete Enden
 
-                const offsetX = e.size * 0.2; // Startpunkt am Kopf (leicht nach vorne versetzt)
-                const offSetY = Math.max(3, e.size * 0.3); // Halbe Lückenbreite
-                const length = e.size * 0.8; // Länge der "Zangen"
+                // Der Kopf ragt bis X = 1.3 nach vorne.
+                // Wir fangen bei 1.15 an, damit sie nur ein winziges Stück im Kopf verankert sind.
+                const offsetX = e.size * 1.15;
+
+                // Die Lücke in der Mitte (etwas breiter gemacht, passend zum neuen, dickeren Kopf)
+                const offSetY = Math.max(3, e.size * 0.4);
+
+                // Die Länge der Zangen (auf 1.0 erhöht, da sie jetzt weiter vorne starten)
+                const length = e.size * 0.5;
 
                 // Oberer Strich
                 ctx.beginPath();
@@ -874,13 +896,6 @@ function draw() {
 
             // 3. Die Augen
             ctx.fillStyle = (e instanceof CarnivoreCell) ? 'black' : 'white';
-
-            // ctx.beginPath();
-            // ctx.arc(e.size * 0.4, -e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
-            // ctx.fill();
-            // ctx.beginPath();
-            // ctx.arc(e.size * 0.4, e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
-            // ctx.fill();
 
             const eyeRadius = Math.max(1, e.size * 0.15);
             ctx.fillRect(e.size * 0.4 - eyeRadius, -e.size * 0.3 - eyeRadius, eyeRadius * 2, eyeRadius * 2); // Linkes Auge
@@ -903,6 +918,16 @@ function draw() {
                     ctx.setLineDash([]); // Reset
                 }
 
+                if (e.target && e instanceof CarnivoreCell) {
+                    ctx.strokeStyle = 'rgba(0, 255, 0, 0.5)';
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(e.x, e.y);
+                    ctx.lineTo(e.target.x, e.target.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]); // Reset
+                }
+
                 if (e.currentFleeTarget) {
                     // Blaue Linie zum Fluchtziel (wohin will es?)
                     const angle = Math.atan2(e.currentFleeTarget.y - e.y, e.currentFleeTarget.x - e.x);
@@ -911,6 +936,17 @@ function draw() {
                     ctx.beginPath();
                     ctx.moveTo(e.x, e.y);
                     ctx.lineTo(e.x + Math.cos(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE, e.y + Math.sin(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE);
+                    ctx.stroke();
+                }
+
+                // --- NEU: Orange Linie für die Hindernis-Vermeidung ---
+                // Wir fragen jetzt auf "undefined" ab, damit eine 0 nicht mehr zum Abbruch führt!
+                if (e.debugAvoidX !== undefined && e.debugAvoidY !== undefined && (e.debugAvoidX !== 0 || e.debugAvoidY !== 0)) {
+                    ctx.strokeStyle = 'rgba(255, 165, 0, 0.9)'; // Kräftiges Orange
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(e.x, e.y);
+                    ctx.lineTo(e.x + e.debugAvoidX * 15, e.y + e.debugAvoidY * 15);
                     ctx.stroke();
                 }
             }

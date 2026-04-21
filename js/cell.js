@@ -12,6 +12,9 @@ class Genome {
     mutate() {
         //this.speed += (Math.random() - 0.5) * 0.2;
         this.maxSize += (Math.random() - 0.5) * 2.0;
+        if (this.maxSize > 15) {
+            this.maxSize = 15;
+        }
         this.maxEnergy += (Math.random() - 0.5) * 10;
         //this.minAgeForReproduction += (Math.random() - 0.5) * 100;
     }
@@ -285,7 +288,8 @@ class AnimalCell extends BaseCell {
         return 'moving';
     }
 
-    move(food, isFleeing = false) {
+    // NEU: Dritter Parameter 'avoidEntities' für die Wegfindung
+    move(food, isFleeing = false, avoidEntities = null) {
         let targetAngle = this.angle;
         let distanceToTarget = Infinity;
         let targetWiggleSpeed = 0.05; // Ziel-Takt für diesen Frame (Standard: Ruhig)
@@ -310,6 +314,114 @@ class AnimalCell extends BaseCell {
             targetAngle = this.angle + (Math.random() - 0.5) * 0.1;
         }
 
+        // --- NEU: Boids Hindernis-Vermeidung (Sehr performant) ---
+        let avoidX = 0;
+        let avoidY = 0;
+        let avoiding = false;
+
+        if (avoidEntities) {
+            for (const entity of avoidEntities) {
+                // Sich selbst und das Essen ignorieren wir (wir wollen das Essen ja nicht umfahren!)
+                if (entity === this || entity === food) continue;
+
+                const isStone = entity.type === 'stone';
+                const isPlant = entity.type === 'plant';
+
+                if (isStone || isPlant) {
+                    const dx = this.x - entity.x;
+                    const dy = this.y - entity.y;
+                    const distSq = dx * dx + dy * dy;
+
+                    // Die Vorrausschau-Aura verkleinert:
+                    // Steine von 60 auf 30 reduziert, damit er erst später reagiert.
+                    const lookAhead = isStone ? 40 : 30;
+                    const avoidRadius = this.size + (entity.size || 10) + lookAhead;
+
+                    if (distSq < avoidRadius * avoidRadius && distSq > 0) {
+                        const dist = Math.sqrt(distSq);
+
+                        // GEWICHTUNG MASSIV REDUZIERT:
+                        // Das Essen zieht mit einer Stärke von 2.5.
+                        // Der Stein drückt jetzt nur noch mit 1.8 (statt 6.0).
+                        // So gleitet er am Stein ab, kann aber sein Ziel erreichen!
+                        const weight = isStone ? 10 : 1.8;
+
+                        // Kraft: Je näher das Hindernis, desto panischer der Ausweichversuch
+                        const force = (avoidRadius - dist) / avoidRadius;
+
+                        // Abstoßung berechnen
+                        avoidX += (dx / dist) * force * weight;
+                        avoidY += (dy / dist) * force * weight;
+                        avoiding = true;
+                    }
+                }
+            }
+        }
+
+        // --- NEU: Spielfeldrand-Abstoßung ---
+        // Ab 60 Pixeln Entfernung zum Rand beginnt das Tier gegenzulenken
+        const wallLookAhead = 60;
+
+        // Die Wand ist stark! Sie drückt mit Stärke 3.0 (Steine haben 1.8, Essen zieht mit 2.5)
+        // So weicht das Tier definitiv nicht über den Rand aus.
+        const wallWeight = 6.0;
+
+        // Linker Rand (drückt nach rechts, also +X)
+        if (this.x < wallLookAhead) {
+            const force = (wallLookAhead - this.x) / wallLookAhead;
+            avoidX += force * wallWeight;
+            avoiding = true;
+        }
+        // Rechter Rand (drückt nach links, also -X)
+        if (this.x > window.WORLD_WIDTH - wallLookAhead) {
+            const dist = window.WORLD_WIDTH - this.x;
+            const force = (wallLookAhead - dist) / wallLookAhead;
+            avoidX -= force * wallWeight;
+            avoiding = true;
+        }
+        // Oberer Rand (drückt nach unten, also +Y)
+        if (this.y < wallLookAhead) {
+            const force = (wallLookAhead - this.y) / wallLookAhead;
+            avoidY += force * wallWeight;
+            avoiding = true;
+        }
+        // Unterer Rand (drückt nach oben, also -Y)
+        if (this.y > window.WORLD_HEIGHT - wallLookAhead) {
+            const dist = window.WORLD_HEIGHT - this.y;
+            const force = (wallLookAhead - dist) / wallLookAhead;
+            avoidY -= force * wallWeight;
+            avoiding = true;
+        }
+
+        // --- NEU: Vektor kappen (Normalisieren), falls die Kraft zu groß wird ---
+        if (avoiding) {
+            // 1. Die tatsächliche Stärke (Länge) der kombinierten Ausweichkraft berechnen
+            const avoidMag = Math.sqrt(avoidX * avoidX + avoidY * avoidY);
+
+            // 2. Maximales Limit setzen (wie du vorgeschlagen hast: max 2.0)
+            const maxAvoidForce = 2.4;
+
+            // 3. Wenn die Kraft das Limit überschreitet, kürzen wir den Vektor
+            if (avoidMag > maxAvoidForce) {
+                avoidX = (avoidX / avoidMag) * maxAvoidForce;
+                avoidY = (avoidY / avoidMag) * maxAvoidForce;
+            }
+
+            // Wir speichern die gekappten Werte für die Debug-Linien
+            this.debugAvoidX = avoidX;
+            this.debugAvoidY = avoidY;
+
+            // Wir nehmen den Vektor zu unserem eigentlichen Ziel (Stärke 2.5)
+            const targetDx = Math.cos(targetAngle) * 2.5;
+            const targetDy = Math.sin(targetAngle) * 2.5;
+
+            // Und addieren unsere gedeckelten Ausweichkräfte einfach oben drauf
+            targetAngle = Math.atan2(targetDy + avoidY, targetDx + avoidX);
+        } else {
+            this.debugAvoidX = 0;
+            this.debugAvoidY = 0;
+        }
+
         const diff = (targetAngle - this.angle + Math.PI) % (2 * Math.PI) - Math.PI;
 
         // 2. Wendigkeit
@@ -331,15 +443,8 @@ class AnimalCell extends BaseCell {
         this.x += Math.cos(this.angle) * currentSpeed;
         this.y += Math.sin(this.angle) * currentSpeed;
 
-        // --- NEU: Takt fließend anpassen (Stoßdämpfer + Größen-Einfluss) ---
-
-        // Die magische Zahl 4 sorgt dafür, dass ein großes Tier (Größe 10)
-        // wieder bei deinem gewünschten Faktor von ca. 0.4 landet (4 / 10 = 0.4).
-        // Ein Baby (Größe 2) hat hingegen einen Faktor von 2.0 (4 / 2 = 2.0) und wedelt viel schneller!
+        // Takt fließend anpassen
         const sizeWiggleFactor = 4 / Math.max(2, this.size);
-
-        // Wir haben das absolute Limit von 0.8 auf 1.2 erhöht,
-        // damit die kleinen Babys bei der Flucht auch wirklich richtig schnell zappeln dürfen.
         targetWiggleSpeed = 0.05 + Math.min(currentSpeed * sizeWiggleFactor, 1.2);
 
         this.currentWiggleSpeed += (targetWiggleSpeed - this.currentWiggleSpeed) * 0.1;
@@ -389,26 +494,22 @@ class AnimalCell extends BaseCell {
         return closestTarget;
     }
 
-    // NEU: Sucht das beste Ziel basierend auf Distanz UND Geschwindigkeit
-    findSlowestInSight(candidates, grid, currentTarget = null) {
+    // NEU: Sucht das beste Ziel basierend auf Distanz und GRÖSSE der Beute
+    findBestPreyInSight(candidates, grid, currentTarget = null) {
         let bestTarget = null;
         let bestScore = Infinity; // Der niedrigste Score gewinnt
         const maxRadius = this.genome.sightRange * 5;
 
-        // NEU: Sind wir ein erwachsener Räuber (kein Babyschutz mehr)?
-        // Babyschutz ist bei Größe < maxSize * 0.5 (aus der update-Schleife)
         const isAdultCarnivore = (this instanceof CarnivoreCell) && (this.size >= this.genome.maxSize * 0.5);
         let rivals = [];
 
-        // Wenn ja, suchen wir einmalig alle anderen großen Räuber in der Nähe,
-        // um ihre Aura zu meiden
         if (isAdultCarnivore && grid) {
             const avoidRadius = window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS;
-            rivals = grid.getEntitiesInArea(this.x, this.y, maxRadius + avoidRadius).filter(e => 
-                e instanceof CarnivoreCell && 
-                e.alive && 
-                e !== this && 
-                e.size >= e.genome.maxSize * 0.5 // Nur andere erwachsene Räuber als Gefahr werten
+            rivals = grid.getEntitiesInArea(this.x, this.y, maxRadius + avoidRadius).filter(e =>
+                e instanceof CarnivoreCell &&
+                e.alive &&
+                e !== this &&
+                e.size >= e.genome.maxSize * 0.5
             );
         }
 
@@ -429,35 +530,28 @@ class AnimalCell extends BaseCell {
             }
 
             if (angleDiff <= this.genome.sightAngle) {
-                // 3. Wie schnell ist das Ziel?
-                const sizeBonusMultiplier = 1 + (entity.size * 0.02);
-                const currentSpeed = entity.genome.speed * entity.speedMultiplier * entity.agingFactor * sizeBonusMultiplier;
 
-                // --- Basis-Jagd-Score (Distanz + Geschwindigkeit) ---
-                const speedWeight = window.SETTINGS.HUNT_SCORE_SPEED_WEIGHT;
-                const distanceWeight = window.SETTINGS.HUNT_SCORE_DISTANCE_WEIGHT;
-                let score = (distance * distanceWeight) + (currentSpeed * speedWeight);
+                // --- NEUE SCORE-BERECHNUNG (Distanz vs. Größe) ---
+                // Ein niedriger Score ist gut.
+                // Distanz erhöht den Score (weit weg = schlecht).
+                // Die Größe des Opfers verringert den Score drastisch (groß = gut!).
+                // Multiplikator 15 bedeutet: 1 Einheit Größe ist dem Jäger so viel wert wie 15 Pixel weniger Schwimmen.
+                const sizeBonus = entity.size * 15;
+                let score = distance - sizeBonus;
 
                 // --- STICKINESS-BONUS ---
-                // Wenn dies unser aktuelles Ziel ist, ziehen wir Punkte ab, 
-                // um es künstlich "attraktiver" zu machen als gleichwertige Alternativen
                 if (entity === currentTarget) {
                     score -= window.SETTINGS.HUNT_TARGET_STICKINESS;
                 }
 
-                // --- NEU: Rivalitäts-Strafe ---
-                // Wenn wir ein erwachsener Räuber sind, prüfen wir, ob dicke Konkurrenten beim Essen stehen
+                // --- Rivalitäts-Strafe ---
                 if (isAdultCarnivore) {
                     for (const rival of rivals) {
                         const rdx = entity.x - rival.x;
                         const rdy = entity.y - rival.y;
                         const distToRival = Math.sqrt(rdx * rdx + rdy * rdy);
 
-                        // Wenn das Essen näher als 300px an einem Rivalen dran ist...
                         if (distToRival < window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS) {
-                            // ...bekommt dieses Essen einen saftigen Straf-Score aufgedrückt.
-                            // Je näher der Rivale am Essen ist, desto höher die Strafe.
-                            // (Max Strafe wenn Rivale direkt draufsteht, 0 Strafe wenn 300px entfernt)
                             const penaltyFactor = 1.0 - (distToRival / window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS);
                             score += penaltyFactor * window.SETTINGS.HUNT_SCORE_RIVAL_PENALTY;
                         }
@@ -557,6 +651,28 @@ class AnimalCell extends BaseCell {
         this.target = null;
         this.targetTimer = 0;
 
+        // 1. Idealer Fluchtwinkel: 180 Grad exakt weg von der Gefahr
+        const idealFleeAngle = Math.atan2(this.y - threat.y, this.x - threat.x);
+
+        // 2. Zielpunkt setzen (stur geradeaus in diese Richtung)
+        const fleeTarget = {
+            x: this.x + Math.cos(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE,
+            y: this.y + Math.sin(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE
+        };
+
+        this.currentFleeTarget = fleeTarget; // Für die blauen Debug-Linien speichern
+
+        // 3. Mikro-Navigation (Ausweichen): Hindernisse im kleinen Umkreis laden
+        const avoidEntities = grid.getEntitiesInArea(this.x, this.y, 60);
+
+        // 4. Loslaufen! (Die move-Funktion drückt uns jetzt sanft an Steinen vorbei)
+        this.move(fleeTarget, true, avoidEntities);
+    }
+
+    flee2(threat, grid) {
+        this.target = null;
+        this.targetTimer = 0;
+
         // Idealer Fluchtwinkel: direkt weg von der Gefahr
         let idealFleeAngle = Math.atan2(this.y - threat.y, this.x - threat.x);
         
@@ -644,7 +760,12 @@ class AnimalCell extends BaseCell {
 
         this.currentFleeTarget = fleeTarget; // Für Debug-Linien speichern
 
-        this.move(fleeTarget, true);
+        // NEU: Wir holen uns für die weiche Lenkung (Micro-Navigation) schnell
+        // alle Objekte in einem kleinen Radius (60 Pixel reicht völlig aus)
+        const avoidEntities = grid.getEntitiesInArea(this.x, this.y, 60);
+
+        // Wir übergeben das Array als dritten Parameter an move!
+        this.move(fleeTarget, true, avoidEntities);
     }
 }
 
@@ -746,9 +867,9 @@ class CarnivoreCell extends AnimalCell {
     constructor(x, y, genome) {
         super(x, y, genome);
 
-        const r = Math.floor(150 + Math.random() * 105);
-        const g = Math.floor(Math.random() * 40);
-        const b = Math.floor(Math.random() * 40);
+        const r = Math.floor(200 + Math.random() * 56); // Immer ein sehr starkes Rot (200 bis 255)
+        const g = Math.floor(5 + Math.random() * 10);  // Mehr Grün-Anteil (60 bis 120)
+        const b = Math.floor(5 + Math.random() * 100);  // Mehr Blau-Anteil (60 bis 120)
         this.color = `rgb(${r}, ${g}, ${b})`;
 
         const hue = Math.floor(180 + Math.random() * 120);
@@ -756,7 +877,7 @@ class CarnivoreCell extends AnimalCell {
         const lightness = Math.floor(20 + Math.random() * 15);
         this.dotColor = `hsl(${hue}, 80%, ${lightness}%)`;
 
-        this.metabolismMultiplier = 0.8; // Increased from 0.5 to starve faster
+        this.metabolismMultiplier = 0.5;
         this.genome.sightRange = window.SETTINGS.CARN_SIGHT_RANGE_MULTIPLIER;
         this.genome.sightAngle = window.SETTINGS.CARN_SIGHT_ANGLE;
         this.maxReproductions = window.SETTINGS.CARN_MAX_REPRODUCTIONS;
@@ -875,9 +996,9 @@ class CarnivoreCell extends AnimalCell {
                 const herbivores = huntEntities.filter(e =>
                     e instanceof HerbivoreCell &&
                     e.alive &&
-                    e.size <= this.size
+                    e.size <= this.size // <--- Hier ist deine eingebaute Sperre, dass Opfer nie größer sein dürfen!
                 );
-                let newTarget = this.findSlowestInSight(herbivores, grid, this.target);
+                let newTarget = this.findBestPreyInSight(herbivores, grid, this.target);
 
                 if (!newTarget) {
                     const smallerCarnivores = huntEntities.filter(e =>
@@ -886,7 +1007,7 @@ class CarnivoreCell extends AnimalCell {
                         e !== this &&
                         e.size < this.size
                     );
-                    newTarget = this.findSlowestInSight(smallerCarnivores, grid, this.target);
+                    newTarget = this.findBestPreyInSight(smallerCarnivores, grid, this.target);
                 }
 
                 if (newTarget) {
@@ -900,7 +1021,9 @@ class CarnivoreCell extends AnimalCell {
             this.target = null;
         }
 
-        this.move(this.target);
+        // Wir übergeben das Array "entitiesInArea", das der Jäger eh schon für
+        // die Flucht und Reviersuche generiert hat. Das spart immens Rechenleistung!
+        this.move(this.target, false, entitiesInArea);
         return status;
     }
 }

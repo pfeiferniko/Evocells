@@ -12,13 +12,13 @@ window.SETTINGS = {
     // ==========================================
     SPAWN_HERBIVORES: 30, // Startanzahl Pflanzenfresser
     SPAWN_CARNIVORES: 3,  // Startanzahl Fleischfresser
-    SPAWN_SUPER_STONES: 2, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
-    SPAWN_NORMAL_STONES: 15, // Anzahl normale Steine
+    SPAWN_SUPER_STONES: 1, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
+    SPAWN_NORMAL_STONES: 20, // Anzahl normale Steine
 
     // ==========================================
     // POPULATIONS-GRENZEN (GEBURTENKONTROLLE)
     // ==========================================
-    MAX_CARNIVORES_FOR_BIRTH: 8, // Ab dieser Anzahl Räuber auf der Karte bekommen sie keine Kinder mehr
+    MAX_CARNIVORES_FOR_BIRTH: 100, // Ab dieser Anzahl Räuber auf der Karte bekommen sie keine Kinder mehr
     HERBIVORE_OVERPOPULATION_START: 30, // Ab hier sinkt die Kinderzahl von Pflanzenfressern allmählich
     HERBIVORE_OVERPOPULATION_MAX: 100, // Ab hier bekommen Pflanzenfresser nur noch 1 Kind
 
@@ -33,7 +33,7 @@ window.SETTINGS = {
     FLEE_SCORE_CURRENT_WEIGHT: 1.0, // Wie wichtig ist es dem Tier, sich wenig drehen zu müssen? (Höher = weniger Wackeln)
     FLEE_PANIC_RADIUS_HERBIVORE: 3.0, // Multiplikator für die Sichtweite: Wann gerät ein Pflanzenfresser in Panik?
     FLEE_PANIC_RADIUS_CARNIVORE: 4.0, // Multiplikator für den Aggro-Radius: Wann gerät ein Räuber vor einem größeren Räuber in Panik?
-    FLEE_HYSTERESIS_BONUS: 100, // Wie viele Pixel wird der Fluchtradius erweitert, während das Tier bereits flieht? (Verhindert hin- und herwechseln)
+    FLEE_HYSTERESIS_BONUS: 200, // Wie viele Pixel wird der Fluchtradius erweitert, während das Tier bereits flieht? (Verhindert hin- und herwechseln)
     
     // ==========================================
     // JAGD-VERHALTEN (HUNTING)
