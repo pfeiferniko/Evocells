@@ -398,11 +398,13 @@ function update() {
 
                 const dx = other.x - e.x;
                 const dy = other.y - e.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
+                const distSq = dx * dx + dy * dy; // Keine Wurzel!
                 const minDist = e.size + (other.size || 2);
 
-                if (dist < minDist && dist > 0) {
-
+    1           // Wir vergleichen die quadrierten Werte
+                if (distSq < minDist * minDist && distSq > 0) {
+                    // ERST JETZT, bei einer echten Kollision, ziehen wir die Wurzel für die Physik
+                    const dist = Math.sqrt(distSq);
                     let eaten = false;
 
                     // NEU: Die Abfrage "e.energy < e.getMaxEnergy()" ist weg. Sie fressen jetzt immer!
@@ -762,19 +764,11 @@ function update() {
 }
 
 function draw() {
-    // Erzeugt einen Verlauf von der Mitte nach außen
-    const bgGradient = ctx.createRadialGradient(
-        WORLD_WIDTH / 2, WORLD_HEIGHT / 2, 0,
-        WORLD_WIDTH / 2, WORLD_HEIGHT / 2, Math.max(WORLD_WIDTH, WORLD_HEIGHT) * 0.8
-    );
-    bgGradient.addColorStop(0, '#060810'); // Mitte: Ein sehr tiefes, dunkles Blau-Grau
-    bgGradient.addColorStop(1, '#000000'); // Rand: Tiefschwarz
-
-    ctx.fillStyle = bgGradient;
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
     // Ein leuchtendes, helles Cyan/Blaugrün
-    ctx.fillStyle = '#44aaff';
+    ctx.fillStyle = '#1a4466';
 
     planktons.forEach(p => {
         // Sanftes Driften + leichtes Wackeln durch Sinus
@@ -789,33 +783,17 @@ function draw() {
         if (p.y > WORLD_HEIGHT) p.y = 0;
 
         // Partikel zeichnen
-        ctx.globalAlpha = p.opacity;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        // ctx.beginPath();
+        // ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        // ctx.fill();
+
+        ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-    ctx.globalAlpha = 1.0; // WICHTIG: Alpha für die restlichen Objekte zurücksetzen!
-    // ------------------------------------------
 
 
     // 1. Durchlauf: Hintergrund-Elemente (Sichtfenster, Pflanzen und Schwänze)
     entities.forEach(e => {
-        // Sichtlinien der Tiere UNTER dem Kopf zeichnen
-        // if (e.type === 'animal') {
-        //     const sightLength = e.size + 5;
-        //     const angleLeft = e.angle - e.genome.sightAngle;
-        //     const angleRight = e.angle + e.genome.sightAngle;
-        //
-        //     ctx.strokeStyle = 'rgba(255, 255, 255, 0.8)';
-        //     ctx.lineWidth = 1;
-        //     ctx.beginPath();
-        //     ctx.moveTo(e.x, e.y);
-        //     ctx.lineTo(e.x + Math.cos(angleLeft) * sightLength, e.y + Math.sin(angleLeft) * sightLength);
-        //     ctx.moveTo(e.x, e.y);
-        //     ctx.lineTo(e.x + Math.cos(angleRight) * sightLength, e.y + Math.sin(angleRight) * sightLength);
-        //     ctx.stroke();
-        // }
 
         // Pflanzen, Steine und Schwänze
         if (e.type === 'plant' || e.type === 'tail' || e.type === 'stone') {
@@ -834,19 +812,25 @@ function draw() {
             }
 
             ctx.fillStyle = e.color || 'white';
-            ctx.beginPath();
-            // Benutze drawSize statt e.size
-            ctx.arc(e.x, e.y, Math.max(1, drawSize), 0, Math.PI * 2);
-            ctx.fill();
+            // ctx.beginPath();
+            // ctx.arc(e.x, e.y, Math.max(1, drawSize), 0, Math.PI * 2);
+            // ctx.fill();
+
+            const radius = Math.max(1, drawSize);
+            ctx.fillRect(e.x - radius, e.y - radius, radius * 2, radius * 2);
+
             ctx.restore();
 
             // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen ---
             if (e.type === 'tail' && e.dotColor) {
                 // Hier KEIN save(), restore() oder 'lighter' Blending mehr!
                 ctx.fillStyle = e.dotColor;
-                ctx.beginPath();
-                ctx.arc(e.x, e.y, Math.max(1, e.size * 0.4), 0, Math.PI * 2);
-                ctx.fill();
+                // ctx.beginPath();
+                // ctx.arc(e.x, e.y, Math.max(1, e.size * 0.4), 0, Math.PI * 2);
+                // ctx.fill();
+
+                const dotRadius = Math.max(1, e.size * 0.4);
+                ctx.fillRect(e.x - dotRadius, e.y - dotRadius, dotRadius * 2, dotRadius * 2);
             }
         }
     });
@@ -861,11 +845,16 @@ function draw() {
             ctx.rotate(e.angle);
 
             // 1. Der Haupt-Kopf (die Ellipse)
-            ctx.beginPath();
-            ctx.ellipse(0, 0, e.size, e.size * 0.7, 0, 0, Math.PI * 2);
+            // ctx.beginPath();
+            // ctx.ellipse(0, 0, e.size, e.size * 0.7, 0, 0, Math.PI * 2);
+            // ctx.fill();
+            // ctx.closePath();
+
             ctx.fillStyle = e.color || 'white';
-            ctx.fill();
-            ctx.closePath();
+
+            const bodyWidth = e.size;
+            const bodyHeight = e.size * 0.7;
+            ctx.fillRect(-bodyWidth, -bodyHeight, bodyWidth * 2, bodyHeight * 2);
 
             // 2. NEU: Der "Mund" / die Zangen für Fleischfresser
             if (e instanceof CarnivoreCell) {
@@ -892,12 +881,17 @@ function draw() {
 
             // 3. Die Augen
             ctx.fillStyle = (e instanceof CarnivoreCell) ? 'black' : 'white';
-            ctx.beginPath();
-            ctx.arc(e.size * 0.4, -e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.arc(e.size * 0.4, e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
-            ctx.fill();
+
+            // ctx.beginPath();
+            // ctx.arc(e.size * 0.4, -e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
+            // ctx.fill();
+            // ctx.beginPath();
+            // ctx.arc(e.size * 0.4, e.size * 0.3, Math.max(1, e.size * 0.15), 0, Math.PI * 2);
+            // ctx.fill();
+
+            const eyeRadius = Math.max(1, e.size * 0.15);
+            ctx.fillRect(e.size * 0.4 - eyeRadius, -e.size * 0.3 - eyeRadius, eyeRadius * 2, eyeRadius * 2); // Linkes Auge
+            ctx.fillRect(e.size * 0.4 - eyeRadius, e.size * 0.3 - eyeRadius, eyeRadius * 2, eyeRadius * 2);  // Rechtes Auge
 
             ctx.restore();
             // --- KOPF ENDE ---
@@ -932,20 +926,22 @@ function draw() {
 
     // 3. Durchlauf: Fress-Krümel zeichnen (ganz im Vordergrund)
     particles.forEach(p => {
-        ctx.globalAlpha = p.life;
+        //ctx.globalAlpha = p.life;
         ctx.fillStyle = p.color;
 
         // Lighter Blending lässt auch die Krümel leicht leuchten
-        ctx.globalCompositeOperation = 'lighter';
+        //ctx.globalCompositeOperation = 'lighter';
 
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
+        // ctx.beginPath();
+        // ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        // ctx.fill();
+
+        ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
     // Alles auf Standard zurücksetzen für den nächsten Frame
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.globalAlpha = 1.0;
+    //ctx.globalCompositeOperation = 'source-over';
+    //ctx.globalAlpha = 1.0;
 }
 
 function animate() {
