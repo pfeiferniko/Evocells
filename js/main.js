@@ -812,12 +812,12 @@ function draw() {
             }
 
             ctx.fillStyle = e.color || 'white';
-            // ctx.beginPath();
-            // ctx.arc(e.x, e.y, Math.max(1, drawSize), 0, Math.PI * 2);
-            // ctx.fill();
+            ctx.beginPath();
+            ctx.arc(e.x, e.y, Math.max(1, drawSize), 0, Math.PI * 2);
+            ctx.fill();
 
-            const radius = Math.max(1, drawSize);
-            ctx.fillRect(e.x - radius, e.y - radius, radius * 2, radius * 2);
+            // const radius = Math.max(1, drawSize);
+            // ctx.fillRect(e.x - radius, e.y - radius, radius * 2, radius * 2);
 
             ctx.restore();
 
