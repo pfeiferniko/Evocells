@@ -647,25 +647,48 @@ class AnimalCell extends BaseCell {
         }
     }
 
-    flee(threat, grid) {
+    // NEU: Bekommt jetzt ein ARRAY von Gefahren ('threats') anstelle von einem einzigen 'threat'
+    flee(threats, grid) {
         this.target = null;
         this.targetTimer = 0;
 
-        // 1. Idealer Fluchtwinkel: 180 Grad exakt weg von der Gefahr
-        const idealFleeAngle = Math.atan2(this.y - threat.y, this.x - threat.x);
+        let combinedFleeX = 0;
+        let combinedFleeY = 0;
 
-        // 2. Zielpunkt setzen (stur geradeaus in diese Richtung)
+        // 1. Alle Fluchtvektoren addieren (gewichtet nach Distanz)
+        for (const threat of threats) {
+            const dx = this.x - threat.x;
+            const dy = this.y - threat.y;
+            const distSq = dx * dx + dy * dy;
+
+            if (distSq > 0) {
+                const dist = Math.sqrt(distSq);
+
+                // Je näher der Jäger, desto panischer der Drang, genau IHM auszuweichen
+                // Die 100 ist ein Multiplikator, der die Kraft schön weich skaliert
+                const force = 100 / dist;
+
+                combinedFleeX += (dx / dist) * force;
+                combinedFleeY += (dy / dist) * force;
+            }
+        }
+
+        // 2. Idealer Fluchtwinkel aus der GEMEINSAMEN Summe berechnen
+        // Die atan2 Funktion macht aus den X/Y Werten wieder einen perfekten Winkel
+        const idealFleeAngle = Math.atan2(combinedFleeY, combinedFleeX);
+
+        // 3. Zielpunkt setzen (stur in diese berechnete, optimale Richtung)
         const fleeTarget = {
             x: this.x + Math.cos(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE,
             y: this.y + Math.sin(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE
         };
 
-        this.currentFleeTarget = fleeTarget; // Für die blauen Debug-Linien speichern
+        this.currentFleeTarget = fleeTarget;
 
-        // 3. Mikro-Navigation (Ausweichen): Hindernisse im kleinen Umkreis laden
+        // 4. Mikro-Navigation (Ausweichen): Hindernisse laden
         const avoidEntities = grid.getEntitiesInArea(this.x, this.y, 60);
 
-        // 4. Loslaufen! (Die move-Funktion drückt uns jetzt sanft an Steinen vorbei)
+        // 5. Loslaufen!
         this.move(fleeTarget, true, avoidEntities);
     }
 
@@ -821,22 +844,23 @@ class HerbivoreCell extends AnimalCell {
         );
 
         this.threat = null;
-        let minPredatorDist = Infinity;
+        let activeThreats = [];
 
         for (const p of predators) {
             const dx = p.x - this.x;
             const dy = p.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist <= panicRadius && dist < minPredatorDist) {
-                minPredatorDist = dist;
-                this.threat = p;
+            if (dist <= panicRadius) {
+                activeThreats.push(p); // Alle gefährlichen Jäger in die Liste packen!
             }
         }
 
-        if (this.threat) {
-            this.flee(this.threat, grid);
+        if (activeThreats.length > 0) {
+            this.threat = activeThreats[0]; // Behalten wir für die Hysterese und die rote Debug-Linie
+            this.flee(activeThreats, grid); // Das gesamte Array an die Flucht-Funktion übergeben
             return status;
         } else {
+            this.threat = null;
             this.currentFleeTarget = null;
         }
 
@@ -926,21 +950,24 @@ class CarnivoreCell extends AnimalCell {
                 e.size > this.size
             );
 
+            let activeThreats = [];
+
             for (const p of largerPredators) {
                 const dx = p.x - this.x;
                 const dy = p.y - this.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
-                if (dist <= panicRadius && dist < minPredatorDist) {
-                    minPredatorDist = dist;
-                    this.threat = p;
+                if (dist <= panicRadius) {
+                    activeThreats.push(p); // Alle größeren Jäger sammeln
                 }
             }
 
-            if (this.threat) {
-                this.flee(this.threat, grid);
+            if (activeThreats.length > 0) {
+                this.threat = activeThreats[0]; // Für Hysterese/Debug-Linie
+                this.flee(activeThreats, grid); // Das gesamte Array übergeben
                 return status;
             } else {
+                this.threat = null;
                 this.currentFleeTarget = null;
             }
         } else {
