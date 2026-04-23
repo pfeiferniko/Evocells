@@ -78,7 +78,7 @@ const pixelModes = [
     { label: "0.2", factor: 0.2 }
 ];
 
-let currentPixelMode = 3; // Startet bei Index 0 (AUS)
+let currentPixelMode = 0; // Startet bei Index 0 (AUS)
 const pixelBtn = document.getElementById('pixel-btn');
 
 if (pixelBtn) {
@@ -237,13 +237,24 @@ function init() {
         entities.push(carnivore);
         addInitialTail(carnivore, entities);
     }
+    for (let i = 0; i < window.SETTINGS.SPAWN_SNAKES; i++) {
+        const initialGenome = new Genome();
+        initialGenome.speed = window.SETTINGS.SNAKE_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.SNAKE_SPEED_VARIANCE * 2;
+        initialGenome.maxSize = 8 + Math.random() * 2;
 
+        let snake = new SnakeCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
+        snake.size = 3;
+        entities.push(snake);
+
+        // Die Schlange startet direkt mit 8 Gliedern!
+        addInitialTail(snake, entities, 8);
+    }
     console.log("Entities created:", entities.length);
     animate();
 }
 
-function addInitialTail(animal, targetArray) {
-    for (let i = 0; i < 3; i++) {
+function addInitialTail(animal, targetArray, length = 3) {
+    for (let i = 0; i < length; i++) {
         let parentNode = (i === 0) ? animal : animal.tailSegments[i - 1];
 
         // NEU: offset 0, Tiefe i + 1
@@ -284,28 +295,40 @@ function update() {
                 });
             }
 
-            // Schwanz wachsen lassen (Hier passiert die Spaltung!)
+            // Schwanz wachsen lassen (Hier passiert die Spaltung oder das Schlangen-Wachstum)
             if (e.type === 'animal' && e.shouldGrowTail) {
                 e.shouldGrowTail = false;
 
-                if (e instanceof CarnivoreCell && e.tailSegments.length >= 3) {
-                    // ROTER JÄGER UND SCHWANZ >= 3: WIR SPALTEN!
-                    const len = e.tailSegments.length;
+                if (e instanceof SnakeCell) {
+                    // --- NEU: Schlangen wachsen immer linear, aber 2 Glieder auf einmal ---
+                    for (let i = 0; i < 3; i++) {
+                        // Wir suchen das aktuell letzte Glied am Ende des Schwanzes
+                        const lastNode = e.tailSegments.length > 0 ? e.tailSegments[e.tailSegments.length - 1] : e;
+                        const nextDepth = (lastNode.depth || 0) + 1;
 
+                        // Neue Glieder der Schlange haben immer branch = 0 (keine Gabelung)
+                        const newTail = new TailSegment(e.x, e.y, lastNode, e.size * 0.8, 0, nextDepth);
+                        e.tailSegments.push(newTail);
+                        newEntities.push(newTail);
+                    }
+                }
+                else if (e instanceof CarnivoreCell && !(e instanceof SnakeCell) && e.tailSegments.length >= 3) {
+                    // ROTER JÄGER (keine Schlange): Gabelung/Splitting ab dem 3. Glied
+                    const len = e.tailSegments.length;
                     const parentL = len === 3 ? e.tailSegments[2] : e.tailSegments[len - 2];
                     const parentR = len === 3 ? e.tailSegments[2] : e.tailSegments[len - 1];
                     const nextDepth = parentL.depth + 1;
 
-                    // NEU: Wir übergeben nur noch die Richtung (-1 für Links, 1 für Rechts)
                     const newTailL = new TailSegment(e.x, e.y, parentL, e.size * 0.8, -1, nextDepth);
                     const newTailR = new TailSegment(e.x, e.y, parentR, e.size * 0.8, 1, nextDepth);
 
                     e.tailSegments.push(newTailL, newTailR);
                     newEntities.push(newTailL, newTailR);
-                } else {
-                    // PFLANZENFRESSER (oder Basis des Schwanzes): Normaler, gerader Ast (0)
+                }
+                else {
+                    // PFLANZENFRESSER oder Basis-Stück des Schwanzes: 1 Glied linear
                     const lastNode = e.tailSegments.length > 0 ? e.tailSegments[e.tailSegments.length - 1] : e;
-                    const nextDepth = lastNode ? lastNode.depth + 1 : 1;
+                    const nextDepth = (lastNode.depth || 0) + 1;
 
                     const newTail = new TailSegment(e.x, e.y, lastNode, e.size * 0.8, 0, nextDepth);
                     e.tailSegments.push(newTail);
@@ -328,7 +351,11 @@ function update() {
                         const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
                         numChildren = 10 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
                     } else {
-                        numChildren = 1; // Minimum bei Überbevölkerung
+                        if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
+                            numChildren = 0;
+                        } else {
+                            numChildren = 1;
+                        }
                     }
 
                     // Da wir keine halben Kinder haben können:
@@ -357,15 +384,23 @@ function update() {
                         const childY = Math.max(0, Math.min(WORLD_HEIGHT, e.y + offsetY));
 
                         // Das Kind erschaffen (mit seiner vorläufigen Zufallsfarbe)
-                        const child = (e instanceof HerbivoreCell)
-                            ? new HerbivoreCell(childX, childY, newGenome)
-                            : new CarnivoreCell(childX, childY, newGenome);
+                        let child;
+                        let startTailLength = 3;
+
+                        if (e instanceof HerbivoreCell) {
+                            child = new HerbivoreCell(childX, childY, newGenome);
+                        } else if (e instanceof SnakeCell) {
+                            child = new SnakeCell(childX, childY, newGenome);
+                            startTailLength = 8; // Schlangenbabys sind sofort lang!
+                        } else {
+                            child = new CarnivoreCell(childX, childY, newGenome);
+                        }
 
                         // Hier überschreiben wir die Zufallsfarbe des Babys exakt mit der Farbe der Eltern
                         child.color = e.color;
                         child.dotColor = e.dotColor;
 
-                        addInitialTail(child, newEntities);
+                        addInitialTail(child, newEntities, startTailLength);
 
                         child.energy = Math.min(e.energy, child.getMaxEnergy() - 1);
                         newEntities.push(child);
@@ -401,7 +436,7 @@ function update() {
                 const distSq = dx * dx + dy * dy; // Keine Wurzel!
                 const minDist = e.size + (other.size || 2);
 
-    1           // Wir vergleichen die quadrierten Werte
+                // Wir vergleichen die quadrierten Werte
                 if (distSq < minDist * minDist && distSq > 0) {
                     // ERST JETZT, bei einer echten Kollision, ziehen wir die Wurzel für die Physik
                     const dist = Math.sqrt(distSq);
@@ -416,7 +451,7 @@ function update() {
                                 // NEU: Pflanzen werden IMMER stückchenweise abgeknabbert, egal wie groß der Fresser ist.
                                 // 0.05 pro Frame bedeutet: Bei 60 FPS dauert es über 3 Sekunden,
                                 // um eine normalgroße Pflanze (Größe 10) komplett zu fressen.
-                                const biteAmount = Math.min(0.2, other.size);
+                                const biteAmount = Math.min((e.size * 0.02), other.size);
 
                                 other.size -= biteAmount; // Pflanze wird langsam kleiner
                                 e.energy += biteAmount; // Energie wird langsam hochgezählt
@@ -429,7 +464,7 @@ function update() {
                                 e.energy = Math.min(e.getMaxEnergy(), e.energy);
 
                                 // Sehr sanftes, stetiges Wachstum beim Grasen
-                                if (e.size < e.genome.maxSize) e.size += 0.005;
+                                if (e.size < e.genome.maxSize) e.size += 0.002;
 
                                 // Pflanze stirbt erst, wenn nur noch ein winziger Rest übrig ist
                                 if (other.size < 0.5) {
@@ -446,8 +481,8 @@ function update() {
                             }
                         }
                         // Carnivore eats Herbivore
-                        else if (e instanceof CarnivoreCell && other instanceof HerbivoreCell && e.size >= other.size) {
-                            other.energy -= 1;
+                        else if (e instanceof CarnivoreCell && other instanceof HerbivoreCell) {
+                            other.energy -= e.size * 0.2;
                             other.speedMultiplier = Math.max(0.02, other.speedMultiplier - 0.15);
 
                             // --- NEU: Dynamische Krümelgröße beim Knabbern ---
@@ -461,22 +496,23 @@ function update() {
                                 createParticles(other.x, other.y, other.color, pCount, pSize);
                             }
 
-                            e.energy += 0.05;
+                            e.energy += 0.01;
                             e.stuckTimer = 0; // STUCK-FIX: Wenn er frisst, steckt er nicht fest
                             e.accumulatedDist = 0;
 
                             if (other.energy <= 0) {
                                 other.isEaten = true;
                                 other.alive = false;
+                                other.graceTimer = 60;
                                 if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
                                 // --- NEU: Energiegewinn basiert rein auf der Beutegröße ---
                                 // 10 Energiepunkte pro Größen-Einheit. Ein ausgewachsenes Tier (Größe 10)
                                 // füllt den Jäger (+100) komplett auf. Ein Baby (Größe 2) gibt nur +20.
-                                const energyGain = other.size * 10;
+                                const energyGain = other.size * 2;
                                 e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
 
-                                if (e.size < e.genome.maxSize) e.size += 0.5;
+                                if (e.size < e.genome.maxSize) e.size += 0.15;
 
                                 const finalPuffCount = Math.floor(other.size * 2);
                                 const finalPuffSize = other.size * 0.4;
@@ -485,39 +521,43 @@ function update() {
                             eaten = true;
                         }
                         // Carnivore isst Carnivore (Kannibalismus)
-                        else if (e instanceof CarnivoreCell && other instanceof CarnivoreCell && e.size >= other.size) {
+                        else if (e instanceof CarnivoreCell && other instanceof CarnivoreCell) {
                             if (e.target === other) {
                                 other.energy -= 1;
                                 other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
-                                other.graceTimer = 60; // NEU: 1 Sekunde Schutz vor Verhungern
+                                other.graceTimer = 60;
 
-                                // --- NEU: Dynamische Krümelgröße beim Knabbern ---
+                                // --- NEU: NOTWEHR (Berserker-Modus) ---
+                                // Sobald das Tier gebissen wird, wehrt es sich!
+                                other.target = e;               // Nimm den Angreifer ins Visier
+                                other.threat = null;            // Vergiss die Flucht
+                                other.currentFleeTarget = null; // Zielpunkt der Flucht löschen
+                                other.berserkTimer = 60;        // Für 60 Frames (ca. 1 Sekunde) unterdrückt dies den Fluchtinstinkt
+
+                                // --- NEU: Ruckartige Drehung zum Angreifer! ---
+                                other.angle = Math.atan2(e.y - other.y, e.x - other.x);
+
+                                // --- Dynamische Krümelgröße beim Knabbern ---
                                 if (Math.random() < 0.4) {
-                                    // Anzahl: Je größer das Opfer, desto mehr Krümel. (Mindestens 1)
                                     const pCount = Math.max(1, Math.floor(other.size * 0.3));
-
-                                    // Größe: Je dicker das Opfer, desto größer die Brocken.
                                     const pSize = Math.max(2, other.size * 0.3);
-
                                     createParticles(other.x, other.y, other.color, pCount, pSize);
                                 }
 
-                                e.energy += 0.05;
-                                e.stuckTimer = 0; // STUCK-FIX: Wenn er frisst, steckt er nicht fest
+                                e.energy += 0.01;
+                                e.stuckTimer = 0;
                                 e.accumulatedDist = 0;
 
+                                // Wenn das Tier durch den Biss stirbt
                                 if (other.energy <= 0) {
                                     other.isEaten = true;
                                     other.alive = false;
                                     if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
-                                    // --- NEU: Energiegewinn beim Kannibalismus ---
-                                    // Wir nehmen hier nur Faktor 5 statt 10. Jäger schmecken nicht so gut
-                                    // wie Pflanzenfresser und geben weniger Energie.
-                                    const energyGain = other.size * 5;
+                                    const energyGain = other.size;
                                     e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
 
-                                    if (e.size < e.genome.maxSize) e.size += 0.1;
+                                    if (e.size < e.genome.maxSize) e.size += 0.15;
 
                                     const finalPuffCount = Math.floor(other.size * 2);
                                     const finalPuffSize = other.size * 0.4;
@@ -573,9 +613,8 @@ function update() {
             if (e.energy <= 0) {
 
                 // Spawne IMMER eine Super-Pflanze, wenn ein PFLANZENFRESSER verhungert ist
-                if (e instanceof HerbivoreCell && !e.isEaten && Math.random() < 0.3) { // 30% Chance
+                if (e instanceof HerbivoreCell && !e.isEaten && Math.random() < 0.05) { // 30% Chance
                     const superPlant = new PlantSegment(e.x, e.y, null, true);
-                    superPlant.color = '#00FFFF';
                     superPlant.isTip = true;
                     newEntities.push(superPlant);
                 }
@@ -857,7 +896,9 @@ function draw() {
             ctx.beginPath();
             ctx.fillStyle = e.color || 'white';
 
-            if (e instanceof CarnivoreCell) {
+            if (e instanceof SnakeCell) {
+                ctx.ellipse(0, 0, e.size * 1.1, e.size * 0.9, 0, 0, Math.PI * 2);
+            }else if (e instanceof CarnivoreCell) {
                 ctx.ellipse(0, 0, e.size * 1.3, e.size, 0, 0, Math.PI * 2);
             } else {
                 ctx.ellipse(0, 0, e.size, e.size * 0.7, 0, 0, Math.PI * 2);
@@ -866,8 +907,8 @@ function draw() {
             ctx.closePath();
 
             // 2. NEU: Der "Mund" / die Zangen für Fleischfresser
-            if (e instanceof CarnivoreCell) {
-                ctx.strokeStyle = '#a00000'; // Ein etwas dunkleres Rot für die Mandibeln
+            if (e.constructor === CarnivoreCell) {
+                ctx.strokeStyle = e.color;
                 ctx.lineWidth = Math.max(2, e.size * 0.25); // Stärke skaliert mit der Größe
                 ctx.lineCap = 'round'; // Abgerundete Enden
 
@@ -937,6 +978,20 @@ function draw() {
                     ctx.moveTo(e.x, e.y);
                     ctx.lineTo(e.x + Math.cos(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE, e.y + Math.sin(angle) * window.SETTINGS.FLEE_TARGET_DISTANCE);
                     ctx.stroke();
+                }
+
+                // --- NEU: Magenta Linie zum Wegpunkt (Sicherer Hafen) ---
+                if (e.waypoint) {
+                    ctx.strokeStyle = 'magenta';
+                    ctx.lineWidth = 1;
+                    // Wir machen sie fein gestrichelt, damit sie sich von der
+                    // durchgezogenen blauen Flucht-Linie unterscheidet
+                    ctx.setLineDash([2, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(e.x, e.y);
+                    ctx.lineTo(e.waypoint.x, e.waypoint.y);
+                    ctx.stroke();
+                    ctx.setLineDash([]); // WICHTIG: Dash-Modus wieder ausschalten!
                 }
 
                 // --- NEU: Orange Linie für die Hindernis-Vermeidung ---
