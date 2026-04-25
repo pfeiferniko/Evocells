@@ -4,7 +4,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 let WORLD_WIDTH = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
 let WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
 const GRID_SIZE = window.SETTINGS.GRID_SIZE || 50;
-let grid;
+let staticGrid, dynamicGrid;
 
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
@@ -161,7 +161,8 @@ function init() {
     // Nutze die neue Funktion zum ersten Mal (Standard: 1.0)
     applyResolution(pixelModes[currentPixelMode].factor);
 
-    grid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
+    staticGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
+    dynamicGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
 
     // Wasserstaub generieren
     for (let i = 0; i < PLANKTON_COUNT; i++) {
@@ -188,22 +189,48 @@ function init() {
 
     // 3 SUPER-Steine
     for (let i = 0; i < window.SETTINGS.SPAWN_SUPER_STONES; i++) {
-        const spawnX = Math.max(300, Math.random() * (WORLD_WIDTH - 300));
+        const spawnX = Math.max(600, Math.random() * (WORLD_WIDTH - 600));
         const spawnY = Math.max(300, Math.random() * (WORLD_HEIGHT - 300));
         const size = 20 + Math.random() * 20;
         const stone = new StoneCell(spawnX, spawnY, size, true); // true = isSuper
         stones.push(stone);
         entities.push(stone);
+        staticGrid.add(stone);
     }
 
-    // 7 NORMALE Steine
+    // NORMALE Steine generieren (mit Sicherheitsabstand zu Super-Steinen)
     for (let i = 0; i < window.SETTINGS.SPAWN_NORMAL_STONES; i++) {
-        const spawnX = Math.max(100, Math.random() * (WORLD_WIDTH - 100));
-        const spawnY = Math.max(100, Math.random() * (WORLD_HEIGHT - 100));
+        let spawnX, spawnY;
+        let tooClose = true;
+        let attempts = 0;
+
+        // Wir versuchen bis zu 50 Mal, einen freien Platz zu finden
+        while (tooClose && attempts < 50) {
+            spawnX = Math.max(100, Math.random() * (WORLD_WIDTH - 100));
+            spawnY = Math.max(100, Math.random() * (WORLD_HEIGHT - 100));
+            tooClose = false;
+
+            // Prüfen, ob der neue Punkt zu nah an einem Super-Stein liegt
+            for (const existingStone of stones) {
+                if (existingStone.isSuper) {
+                    const dx = spawnX - existingStone.x;
+                    const dy = spawnY - existingStone.y;
+
+                    // 250 Pixel Sicherheitsabstand (250 * 250 = 62500 für die schnelle Abfrage)
+                    if (dx * dx + dy * dy < 100000) {
+                        tooClose = true;
+                        break; // Abbrechen und neue Koordinaten würfeln
+                    }
+                }
+            }
+            attempts++;
+        }
+
         const size = 10 + Math.random() * 20;
         const stone = new StoneCell(spawnX, spawnY, size, false); // false = normal
         stones.push(stone);
         entities.push(stone);
+        staticGrid.add(stone);
     }
 
     // 2. Pflanzen um die Steine herum spawnen
@@ -219,7 +246,9 @@ function init() {
             spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, spawnY));
 
             // NEU: Übergibt den Status des Steins an die Pflanze
-            entities.push(new PlantSegment(spawnX, spawnY, null, targetStone.isSuper));
+            const plant = new PlantSegment(spawnX, spawnY, null, targetStone.isSuper);
+            entities.push(plant);
+            staticGrid.add(plant);
         }
     });
 
@@ -272,22 +301,28 @@ function addInitialTail(animal, targetArray, length = 3) {
 }
 
 function update() {
-    grid.clear();
-    entities.forEach(e => grid.add(e));
+    dynamicGrid.clear();
+    entities.forEach(e => {
+        if (e.type === 'animal') {
+            dynamicGrid.add(e);
+        }
+    });
 
     let globalHerbivoreCount = 0;
     let globalCarnivoreCount = 0;
-    let globalPlantCount = 0; // --- NEU: Pflanzenzähler ---
+    let globalPlantCount = 0;
+    let globalGiantCount = 0;
 
     for (let i = 0; i < entities.length; i++) {
         const ent = entities[i];
         if (ent.alive !== false) {
             if (ent instanceof HerbivoreCell) {
                 globalHerbivoreCount++;
+                if (ent.isGiant) globalGiantCount++; // --- NEU: Riesen mitzählen ---
             } else if (ent instanceof CarnivoreCell && !(ent instanceof SnakeCell)) {
                 globalCarnivoreCount++;
             } else if (ent.type === 'plant') {
-                globalPlantCount++; // --- NEU ---
+                globalPlantCount++;
             }
         }
     }
@@ -301,7 +336,7 @@ function update() {
         let isAlive = true;
 
         if (e.type === 'animal') {
-            const status = e.update(grid);
+            const status = e.update(staticGrid, dynamicGrid);
 
             // Update tail segments (Größe anpassen)
             if (e.tailSegments && e.tailSegments.length > 0) {
@@ -416,7 +451,10 @@ function update() {
                         let child;
 
                         if (e instanceof HerbivoreCell) {
-                            child = new HerbivoreCell(childX, childY, newGenome);
+                            // Wir prüfen, ob noch ein Platz für einen Riesen frei ist
+                            const canBecomeGiant = globalGiantCount < 5;
+                            child = new HerbivoreCell(childX, childY, newGenome, canBecomeGiant);
+                            if (child.isGiant) globalGiantCount++;
                         } else if (e instanceof SnakeCell) {
                             child = new SnakeCell(childX, childY, newGenome);
                         } else {
@@ -445,8 +483,9 @@ function update() {
 
             // Animal collision & Eat check
             // Suchradius erhöht (+ 50), damit auch sehr große Steine frühzeitig erkannt werden
-            const nearby = grid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
-            for (const other of nearby) {
+            const nearbyDynamic = dynamicGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 20);
+
+            for (const other of nearbyDynamic) {
                 if (other === e || !other.alive) continue;
 
                 // --- NEU: Schwanz-Erkennung ---
@@ -504,6 +543,7 @@ function update() {
                                 // Pflanze stirbt erst, wenn nur noch ein winziger Rest übrig ist
                                 if (other.size < 0.5) {
                                     other.alive = false;
+                                    staticGrid.remove(other);
                                 }
                                 eaten = true;
                             }
@@ -625,6 +665,10 @@ function update() {
                                 // Pflanzenfresser: Die Pflanze ist eine unbewegliche Wand
                                 moveE = overlap*0.95;      // Tier weicht voll aus
                                 moveOther = overlap * 0.05;        // Pflanze bewegt sich nicht
+
+                                if (e.reproductionCount < e.maxReproductions && (!e.target || e.target.type !== 'plant')) {
+                                    e.target = other;
+                                }
                             }
 
                             // --- NEU: PFLANZE AUFWECKEN ---
@@ -651,6 +695,101 @@ function update() {
                     }
                 }
             }
+
+            const nearbyStatic = staticGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 20);
+
+            for (const other of nearbyStatic) {
+                if (other === e || !other.alive) continue;
+
+                const dx = other.x - e.x;
+                const dy = other.y - e.y;
+                const distSq = dx * dx + dy * dy; // Keine Wurzel!
+                const minDist = e.size + (other.size || 2);
+
+                // Wir vergleichen die quadrierten Werte
+                if (distSq < minDist * minDist && distSq > 0) {
+                    // ERST JETZT, bei einer echten Kollision, ziehen wir die Wurzel für die Physik
+                    const dist = Math.sqrt(distSq);
+                    let eaten = false;
+
+                    // --- HIER MUSS DER FRESS-CODE FÜR PFLANZEN HIN! ---
+                    if (status !== 'reproduce' && status !== 'stationary') {
+                        if (e instanceof HerbivoreCell && other.type === 'plant') {
+                            if (e.target === other) {
+                                const biteAmount = Math.min((e.size * 0.02), other.size);
+                                other.size -= biteAmount;
+                                e.energy += biteAmount;
+
+                                if (Math.random() < 0.2) {
+                                    createParticles(other.x, other.y, other.color, 1);
+                                }
+
+                                e.energy = Math.min(e.getMaxEnergy(), e.energy);
+                                if (e.size < e.maxSize) e.size += 0.002;
+
+                                if (other.size < 0.5) {
+                                    other.alive = false;
+                                    // GANZ WICHTIG: Die gefressene Pflanze aus dem Static Grid löschen!
+                                    staticGrid.remove(other);
+                                }
+                                eaten = true;
+                            }
+                        }
+                    }
+
+                    // NEUE KOLLISIONS-LOGIK MIT GESTRÜPP-WIDERSTAND
+                    if (!eaten && other.type !== 'tail') {
+                        const angle = Math.atan2(dy, dx);
+                        const overlap = minDist - dist;
+
+                        let moveE = 0;
+                        let moveOther = 0;
+
+                        if (other.type === 'stone') {
+                            // Steine sind massiv: Das Tier (e) nimmt den vollen Rückstoß
+                            moveE = overlap;
+                        } else if (other.type === 'plant') {
+                            if (e instanceof CarnivoreCell) {
+                                // Fleischfresser: Schieben Pflanzen weg, werden dabei gebremst
+                                moveOther = overlap * 0.5;
+                                moveE = overlap * 0.5;
+                            } else {
+                                // Pflanzenfresser: Die Pflanze ist eine unbewegliche Wand
+                                moveE = overlap*0.95;      // Tier weicht voll aus
+                                moveOther = overlap * 0.05;        // Pflanze bewegt sich nicht
+
+                                if (e.reproductionCount < e.maxReproductions && (!e.target || e.target.type !== 'plant')) {
+                                    e.target = other;
+                                }
+                            }
+
+                            // --- NEU: PFLANZE AUFWECKEN ---
+                            // Wenn sie von einem Tier angerempelt wird, wacht sie für 10 Frames auf,
+                            // um sich wieder sauber von ihren Nachbar-Pflanzen wegzudrücken!
+                            other.settleTimer = 10;
+
+                        } else {
+                            // Zwei Tiere prallen aufeinander: Größeres Tier bewegt sich weniger
+                            const totalSize = e.size + other.size;
+                            moveE = overlap * (other.size / totalSize);
+                            moveOther = overlap * (e.size / totalSize);
+                        }
+
+                        // Position des aktuellen Tiers anpassen
+                        e.x -= Math.cos(angle) * moveE;
+                        e.y -= Math.sin(angle) * moveE;
+
+                        // Position des anderen Objekts anpassen
+                        if (other.type !== 'stone') {
+                            staticGrid.remove(other); // <--- HIER EINFÜGEN!
+                            other.x += Math.cos(angle) * moveOther;
+                            other.y += Math.sin(angle) * moveOther;
+                            staticGrid.add(other);    // <--- HIER EINFÜGEN!
+                        }
+                    }
+                }
+            }
+
 
             // Energy consumption & instant death
             if (e.energy <= 0) {
@@ -693,6 +832,7 @@ function update() {
                     const superPlant = new PlantSegment(e.x, e.y, null, true, animalBaseColor);
                     superPlant.isTip = true;
                     newEntities.push(superPlant);
+                    staticGrid.add(superPlant);
                 }
 
                 isAlive = false;
@@ -705,13 +845,19 @@ function update() {
             e.update(isStartup);
 
             // --- OPTIMIERUNG: Spatial Sleep (Schlafende Pflanzen) ---
-            // Neue Pflanzen bekommen 30 Frames Zeit, um ihren Platz zu finden. Danach schlafen sie ein.
             if (e.settleTimer === undefined) e.settleTimer = 30;
+
+            // --- NEU: Wachstums-Wache ---
+            // Solange die Pflanze noch nicht ihre volle Größe erreicht hat,
+            // halten wir sie gewaltsam wach, damit sie beim Wachsen ihre Nachbarn wegschiebt!
+            if (e.size < e.maxSize - 0.1) {
+                e.settleTimer = Math.max(e.settleTimer, 5);
+            }
 
             if (e.settleTimer > 0) {
                 e.settleTimer--; // Timer läuft ab
 
-                const neighbors = grid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
+                const neighbors = staticGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
                 for (const other of neighbors) {
                     if (other !== e && (other.type === 'plant' || other.type === 'stone')) {
                         const dx = e.x - other.x;
@@ -728,15 +874,22 @@ function update() {
                             const overlap = minDist - dist;
 
                             if (other.type === 'stone') {
+                                staticGrid.remove(e); // <--- NEU
                                 e.x += Math.cos(angle) * overlap;
                                 e.y += Math.sin(angle) * overlap;
+                                staticGrid.add(e);    // <--- NEU
                             } else {
+                                staticGrid.remove(e);     // <--- NEU
+                                staticGrid.remove(other); // <--- NEU
+
                                 e.x += Math.cos(angle) * (overlap / 2);
                                 e.y += Math.sin(angle) * (overlap / 2);
                                 other.x -= Math.cos(angle) * (overlap / 2);
                                 other.y -= Math.sin(angle) * (overlap / 2);
 
-                                // WICHTIG: Wenn die andere Pflanze weggeschoben wurde, wecken wir sie kurz auf!
+                                staticGrid.add(e);     // <--- NEU
+                                staticGrid.add(other); // <--- NEU
+
                                 other.settleTimer = 10;
                             }
 
@@ -759,7 +912,7 @@ function update() {
                     angle = Math.random() * Math.PI * 2;
                 }
 
-                const dist = e.size + 8;
+                const dist = e.maxSize;
 
                 let spawnX = e.x + Math.cos(angle) * dist;
                 let spawnY = e.y + Math.sin(angle) * dist;
@@ -784,7 +937,7 @@ function update() {
                 spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, spawnY));
 
                 // --- KORREKTUR: Wachstums-Check (Dichte-Regel) ---
-                const nearby = grid.getEntitiesInArea(spawnX, spawnY, 25);
+                const nearby = staticGrid.getEntitiesInArea(spawnX, spawnY, 25);
 
                 // Wir zählen NUR die Pflanzen, die exakt im 25er Radius sind
                 let plantNeighborsCount = 0;
@@ -793,18 +946,19 @@ function update() {
                     if (n.type === 'plant' && n.alive !== false) {
                         const dx = n.x - spawnX;
                         const dy = n.y - spawnY;
-                        // 25 * 25 = 625 (Superschneller Check ohne Wurzel)
-                        if (dx * dx + dy * dy <= 625) {
+                        // 25 * 25 = 625 , 30x30=900 (Superschneller Check ohne Wurzel)
+                        if (dx * dx + dy * dy <= 900) {
                             plantNeighborsCount++;
                         }
                     }
                 }
 
                 // Wachstum nur, wenn wirklich Platz ist UND das globale Limit nicht erreicht ist
-                if (plantNeighborsCount <= 3 && globalPlantCount < window.SETTINGS.PLANTS_MAX_COUNT) {
+                if (plantNeighborsCount <= 2 && globalPlantCount < window.SETTINGS.PLANTS_MAX_COUNT) {
                     e.isTip = false;
                     const child = new PlantSegment(spawnX, spawnY, e, e.isSuper, e.baseColor);
                     newEntities.push(child);
+                    staticGrid.add(child);
                     globalPlantCount++; // Sofort mitzählen!
                 }
             }
@@ -816,7 +970,7 @@ function update() {
         // Stein-Spawning und Kontrolle
         if (e.type === 'stone') {
             const checkRadius = e.size + 40;
-            const nearby = grid.getEntitiesInArea(e.x, e.y, checkRadius);
+            const nearby = staticGrid.getEntitiesInArea(e.x, e.y, checkRadius);
 
             // --- KORREKTUR: Strikte Distanzprüfung ---
             let nearbyPlantsCount = 0;
@@ -860,7 +1014,9 @@ function update() {
                 spawnX = Math.max(50, Math.min(WORLD_WIDTH - 50, spawnX));
                 spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, spawnY));
 
-                newEntities.push(new PlantSegment(spawnX, spawnY, null, e.isSuper));
+                const newPlant = new PlantSegment(spawnX, spawnY, null, e.isSuper);
+                newEntities.push(newPlant);
+                staticGrid.add(newPlant);
             }
         }
 

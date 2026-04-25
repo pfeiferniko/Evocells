@@ -45,7 +45,7 @@ class AnimalCell extends BaseCell {
         return this.size >= this.maxSize * 0.85; // Geändert: Nutzt jetzt die persönliche Maximalgröße
     }
 
-    updateBase(grid) {
+    update(staticGrid, dynamicGrid) {
         this.age++;
 
         // --- NEU: Dynamische Erholung & variables Bluten ---
@@ -216,7 +216,7 @@ class AnimalCell extends BaseCell {
         }
 
         if (!isHerbivore) {
-            this.handleWaypoints(grid);
+            this.handleWaypoints(staticGrid);
         }
 
         return 'moving';

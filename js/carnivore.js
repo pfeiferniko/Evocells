@@ -2,6 +2,19 @@ class CarnivoreCell extends AnimalCell {
     constructor(x, y, genome) {
         super(x, y, genome);
 
+        // --- NEU: Raubtier-Sinne (Adleraugen) ---
+        // Wir vergrößern den Radius für Angriff (sightRange) und Flucht (panicRadius) um 50%
+        if (this.genome && this.genome.sightRange) {
+            this.genome.sightRange *= 1.5;
+        }
+
+        // Falls dein Flucht-Verhalten einen separaten Panic-Radius nutzt, vergrößern wir den auch:
+        if (this.panicRadius) {
+            this.panicRadius *= 1.5;
+        } else if (this.genome && this.genome.panicRadius) {
+            this.genome.panicRadius *= 1.5;
+        }
+
         const r = Math.floor(200 + Math.random() * 56); // Immer ein sehr starkes Rot (200 bis 255)
         const g = Math.floor(5 + Math.random() * 10);  // Mehr Grün-Anteil (60 bis 120)
         const b = Math.floor(5 + Math.random() * 100);  // Mehr Blau-Anteil (60 bis 120)
@@ -22,8 +35,8 @@ class CarnivoreCell extends AnimalCell {
         this.birthCooldown = window.SETTINGS.CARN_COOLDOWN_REPRO;
     }
 
-    update(grid) {
-        const status = this.updateBase(grid);
+    update(staticGrid, dynamicGrid) {
+        const status = super.update(staticGrid, dynamicGrid);
         if (status !== 'moving') return status;
 
         this.checkTargetTimeout(); // Überprüfen, ob sie feststeckt
@@ -46,7 +59,7 @@ class CarnivoreCell extends AnimalCell {
         }
 
         // Suchradius für das Grid (das größte von beiden)
-        const entitiesInArea = grid.getEntitiesInArea(this.x, this.y, panicRadius + 50);
+        const entitiesInArea = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius + 50);
 
         // --- 1. FLUCHT VOR GRÖSSEREN RÄUBERN ---
         const previousThreat = this.threat; // <--- NEU: Alten Verfolger für diesen Frame kurz merken!
@@ -60,6 +73,7 @@ class CarnivoreCell extends AnimalCell {
                 e !== this &&
                 e.size > this.size &&
                 !e.isResting &&
+                e.reproductionCount < e.maxReproductions &&
                 (e.target === this || previousThreat === e || this.isAdult())
             );
 
@@ -77,7 +91,7 @@ class CarnivoreCell extends AnimalCell {
 
             if (activeThreats.length > 0) {
                 this.threat = activeThreats[0]; // Für Hysterese/Debug-Linie
-                this.flee(activeThreats, grid); // Das gesamte Array übergeben
+                this.flee(activeThreats, staticGrid); // Das gesamte Array übergeben
                 return status;
             } else {
                 this.threat = null;
@@ -90,7 +104,7 @@ class CarnivoreCell extends AnimalCell {
 
         // --- NEU: Verdauungspause mit Hysterese (An bei >90%, Aus bei <80%) ---
         // 1. Koma schaltet sich EIN, wenn das Tier extrem voll ist UND der Timer läuft
-        if (this.energy > this.getMaxEnergy() * 0.9 && this.birthCooldown > 0) {
+        if (this.energy > this.getMaxEnergy() * 0.9 && this.birthCooldown > 0 && this.isAdult()) {
             this.isResting = true;
         }
         // 2. Koma schaltet sich AUS, wenn die Energie unter 80% fällt ODER der Timer abläuft
@@ -153,14 +167,14 @@ class CarnivoreCell extends AnimalCell {
                 // Wir suchen regelmäßig (alle 10 Frames) oder wenn wir kein Ziel haben
                 if (!this.target || !this.target.alive || this.age % 10 === 0) {
                     // Für die Jagd schauen wir wieder etwas weiter
-                    const huntEntities = grid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
+                    const huntEntities = dynamicGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
 
                     const herbivores = huntEntities.filter(e =>
                         e instanceof HerbivoreCell &&
                         e.alive &&
                         e.size <= this.size
                     );
-                    let newTarget = this.findBestPreyInSight(herbivores, grid, this.target);
+                    let newTarget = this.findBestPreyInSight(herbivores, dynamicGrid, this.target);
 
                     // Nur nach anderen Räubern suchen, wenn es erlaubt ist
                     if (!newTarget && this.attacksCarnivores) {
@@ -170,7 +184,7 @@ class CarnivoreCell extends AnimalCell {
                             e !== this &&
                             e.size <= this.size
                         );
-                        newTarget = this.findBestPreyInSight(smallerCarnivores, grid, this.target);
+                        newTarget = this.findBestPreyInSight(smallerCarnivores, dynamicGrid, this.target);
                     }
 
                     if (newTarget) {
@@ -185,9 +199,12 @@ class CarnivoreCell extends AnimalCell {
             }
         } // <--- ENDE DER VERDAUUNGSPAUSE (else-Block zu)
 
+        // --- KORREKTUR: Hindernisse aus dem Static Grid holen! ---
+        const obstacles = staticGrid.getEntitiesInArea(this.x, this.y, 60);
+
         // Nutzt target (Essen). Wenn kein Essen da ist, nutzt es waypoint (freier Platz).
         // Wir übergeben 'entitiesInArea', damit die Boids-Ausweich-KI auch hier greift!
-        this.move(this.target || this.waypoint, false, entitiesInArea);
+        this.move(this.target || this.waypoint, false, obstacles);
         return status;
     }
 }

@@ -1,5 +1,5 @@
 class HerbivoreCell extends AnimalCell {
-    constructor(x, y, genome) {
+    constructor(x, y, genome, allowGiant = false) {
         super(x, y, genome);
 
         const r = Math.floor(200 + Math.random() * 55);
@@ -12,33 +12,27 @@ class HerbivoreCell extends AnimalCell {
         const lightness = Math.floor(20 + Math.random() * 15);
         this.dotColor = `hsl(${hue}, 80%, ${lightness}%)`;
 
+        this.maxReproductions = window.SETTINGS.HERB_MAX_REPRODUCTIONS;
+        this.metabolismMultiplier = 1.0;
+        this.target = null;
+        this.threat = null;
+        this.genome.sightRange = window.SETTINGS.HERB_SIGHT_RANGE_MULTIPLIER;
+        this.birthCooldown = window.SETTINGS.HERB_COOLDOWN_REPRO;
+
         // --- NEU: 5% Chance auf nicht-vererbbaren Riesenwuchs ---
-        if (Math.random() < 0.05) {
+        if (allowGiant && Math.random() < 0.05) {
             this.isGiant = true;
-            this.maxSize = this.genome.maxSize + 5;
+            this.maxSize = this.genome.maxSize + 6;
             this.size = 5;
             // Die Riesen leuchten auffällig Gold/Gelb, damit du sie sofort erkennst
             this.color = `rgb(255, 255, 0)`;
             this.dotColor = `rgb(0, 0, 0)`;
+            this.maxReproductions = Infinity;
         }
-
-        this.metabolismMultiplier = 1.0;
-        this.target = null;
-        this.threat = null;
-        this.maxReproductions = window.SETTINGS.HERB_MAX_REPRODUCTIONS;
-        this.genome.sightRange = window.SETTINGS.HERB_SIGHT_RANGE_MULTIPLIER;
-        this.birthCooldown = window.SETTINGS.HERB_COOLDOWN_REPRO;
     }
 
-    /*getMetabolismMultiplier() {
-        let multiplier = this.metabolismMultiplier;
-        if (!this.hasReproduced) multiplier *= 1.2;
-        multiplier -= (this.tailSegments.length * 0.05);
-        return Math.max(0.8, multiplier);
-    }*/
-
-    update(grid) {
-        const status = this.updateBase(grid);
+    update(staticGrid, dynamicGrid) {
+        const status = super.update(staticGrid, dynamicGrid);
         if (status !== 'moving') return status;
 
         let panicRadius = this.genome.sightRange * window.SETTINGS.FLEE_PANIC_RADIUS_HERBIVORE;
@@ -51,15 +45,8 @@ class HerbivoreCell extends AnimalCell {
             panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
         }
 
-        const searchRadius = Math.max(this.genome.sightRange, panicRadius);
-        const entitiesInArea = grid.getEntitiesInArea(this.x, this.y, searchRadius);
-
-
-        const predators = entitiesInArea.filter(e =>
-            e instanceof CarnivoreCell &&
-            e.alive &&
-            e.size >= this.size &&
-            !e.isResting
+        const predators = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
+            e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions
         );
 
         this.threat = null;
@@ -76,7 +63,7 @@ class HerbivoreCell extends AnimalCell {
 
         if (activeThreats.length > 0) {
             this.threat = activeThreats[0]; // Behalten wir für die Hysterese und die rote Debug-Linie
-            this.flee(activeThreats, grid); // Das gesamte Array an die Flucht-Funktion übergeben
+            this.flee(activeThreats, staticGrid); // Das gesamte Array an die Flucht-Funktion übergeben
             return status;
         } else {
             this.threat = null;
@@ -90,7 +77,9 @@ class HerbivoreCell extends AnimalCell {
         } else if ((this.ignoreTargetTimer || 0) <= 0) {
             // Wir aktualisieren das Ziel regelmäßig (alle 15 Frames) oder wenn wir keins haben
             if (!this.target || !this.target.alive || this.age % 15 === 0) {
-                const plants = entitiesInArea.filter(e => e.type === 'plant' && e.alive);
+                const plants = staticGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange).filter(e =>
+                    e.type === 'plant' && e.alive
+                );
                 const newTarget = this.findClosestInSight(plants, this.target);
 
                 if (newTarget) {
@@ -104,9 +93,11 @@ class HerbivoreCell extends AnimalCell {
             this.target = null;
         }
 
-        // Nutzt target (Essen). Wenn kein Essen da ist, nutzt es waypoint (freier Platz).
-        // Wir übergeben 'entitiesInArea', damit die Boids-Ausweich-KI auch hier greift!
-        this.move(this.target);
+        // Hindernisse (Steine/Pflanzen) aus dem Static Grid laden
+        const obstacles = staticGrid.getEntitiesInArea(this.x, this.y, 60);
+
+        // Ziel und Hindernisse übergeben
+        this.move(this.target, false, obstacles);
         return status;
     }
 }

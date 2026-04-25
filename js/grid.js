@@ -19,17 +19,21 @@ class Grid {
         const index = this._getIndex(entity.x, entity.y);
         if (index !== -1) {
             this.grid[index].push(entity);
+            entity._gridIndex = index; // Speichert die Position für schnelles Entfernen
         }
     }
 
-    clear() {
-        for (let i = 0; i < this.grid.length; i++) {
-            this.grid[i].length = 0;
+    remove(entity) {
+        if (entity._gridIndex === undefined || entity._gridIndex === -1) return;
+        const cell = this.grid[entity._gridIndex];
+        const i = cell.indexOf(entity);
+        if (i !== -1) {
+            cell.splice(i, 1);
         }
+        entity._gridIndex = -1;
     }
 
     getEntitiesInArea(x, y, radius) {
-        // Simple bounding box for now
         const entities = [];
         const minCol = Math.max(0, Math.floor((x - radius) / this.cellSize));
         const maxCol = Math.min(this.cols - 1, Math.floor((x + radius) / this.cellSize));
@@ -39,9 +43,18 @@ class Grid {
         for (let col = minCol; col <= maxCol; col++) {
             for (let row = minRow; row <= maxRow; row++) {
                 const index = col + row * this.cols;
-                entities.push(...this.grid[index]);
+                const cell = this.grid[index];
+                for (let i = 0; i < cell.length; i++) {
+                    entities.push(cell[i]);
+                }
             }
         }
         return entities;
+    }
+
+    clear() {
+        for (let i = 0; i < this.grid.length; i++) {
+            this.grid[i].length = 0;
+        }
     }
 }

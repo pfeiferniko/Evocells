@@ -5,7 +5,7 @@ window.SETTINGS = {
     WORLD_BASE_WIDTH: 2000,
     WORLD_BASE_HEIGHT: 1000,
     GRID_SIZE: 100,
-    STARTUP_PHASE_DURATION: 4000, // Millisekunden für die anfängliche "Schnellwachstum"-Phase der Pflanzen
+    STARTUP_PHASE_DURATION: 3000, // Millisekunden für die anfängliche "Schnellwachstum"-Phase der Pflanzen
 
     // ==========================================
     // START-BEDINGUNGEN (SPAWN)
@@ -14,16 +14,16 @@ window.SETTINGS = {
     SPAWN_CARNIVORES: 5,  // Startanzahl Fleischfresser
     SPAWN_SNAKES: 1,
     SPAWN_SUPER_STONES: 1, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
-    SPAWN_NORMAL_STONES: 30, // Anzahl normale Steine
+    SPAWN_NORMAL_STONES: 15, // Anzahl normale Steine
 
     // ==========================================
     // POPULATIONS-GRENZEN (GEBURTENKONTROLLE)
     // ==========================================
     MAX_CARNIVORES_FOR_BIRTH: 100, // Ab dieser Anzahl Räuber auf der Karte bekommen sie keine Kinder mehr
     MAX_HERBIVORE_FOR_BIRTH: 200, // Ab dieser Anzahl Räuber auf der Karte bekommen sie keine Kinder mehr
-    HERBIVORE_OVERPOPULATION_START: 30, // Ab hier sinkt die Kinderzahl von Pflanzenfressern allmählich
-    HERBIVORE_OVERPOPULATION_MAX: 100, // Ab hier bekommen Pflanzenfresser nur noch 1 Kind
-    PLANTS_MAX_COUNT: 1500,
+    HERBIVORE_OVERPOPULATION_START: 60, // Ab hier sinkt die Kinderzahl von Pflanzenfressern allmählich
+    HERBIVORE_OVERPOPULATION_MAX: 130, // Ab hier bekommen Pflanzenfresser nur noch 1 Kind
+    PLANTS_MAX_COUNT: 1100,
 
     // ==========================================
     // FLUCHTVERHALTEN (FLEE)
@@ -58,8 +58,8 @@ window.SETTINGS = {
     // ==========================================
     // ALTERUNG (AGING)
     // ==========================================
-    AGING_DECAY_RATE: 0.0002, // Wie schnell der Speed-Faktor und die Effizienz im Alter sinken (pro Frame)
-    AGING_MIN_FACTOR: 0.1,    // Das Tier wird maximal auf diesen Speed-Faktor (z.B. 10%) reduziert, stirbt aber nicht sofort
+    AGING_DECAY_RATE: 0.002, // Wie schnell der Speed-Faktor und die Effizienz im Alter sinken (pro Frame)
+    AGING_MIN_FACTOR: 0.05,    // Das Tier wird maximal auf diesen Speed-Faktor (z.B. 10%) reduziert, stirbt aber nicht sofort
 
     // ==========================================
     // GENOME & MUTATION
@@ -106,7 +106,7 @@ window.SETTINGS = {
     HERB_ENERGY_REQUIRED_REPRO: 0.7, // 70% der Maximalenergie
     HERB_MIN_AGE_REPRO: 300,
     HERB_REPRO_FRAMES: 90,
-    HERB_COOLDOWN_REPRO: 3000,
+    HERB_COOLDOWN_REPRO: 600,
     HERB_METABOLISM_DISCOUNT: 0.6, // Nur 60% des normalen Verbrauchs
     HERB_SIGHT_RANGE_MULTIPLIER: 100,
 
