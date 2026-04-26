@@ -502,28 +502,37 @@ class AnimalCell extends BaseCell {
         return closestTarget;
     }
 
-    // NEU: Sucht das beste Ziel basierend auf Distanz und GRÖSSE der Beute
-    findBestPreyInSight(candidates, grid, currentTarget = null) {
+    // NEU: Nimmt jetzt auch das staticGrid für die Hindernis-Abfrage entgegen
+    findBestPreyInSight(candidates, dynamicGrid, staticGrid, currentTarget = null) {
         let bestTarget = null;
         let bestScore = Infinity; // Der niedrigste Score gewinnt
         const maxRadius = this.genome.sightRange;
 
         const isAdultCarnivore = (this instanceof CarnivoreCell) && this.isAdult();
         let nearbyHunters = [];
+        let localObstacles = []; // Hier speichern wir Hindernisse (Pflanzen & Steine)
 
-        if (grid) {
+        if (dynamicGrid) {
             const avoidRadius = window.SETTINGS.HUNT_RIVAL_AVOID_RADIUS;
-            nearbyHunters = grid.getEntitiesInArea(this.x, this.y, maxRadius + avoidRadius).filter(e =>
+            nearbyHunters = dynamicGrid.getEntitiesInArea(this.x, this.y, maxRadius + avoidRadius).filter(e =>
                 e instanceof CarnivoreCell &&
                 e.alive &&
                 e !== this
             );
         }
 
+        // --- NEU: Pflanzen UND Steine im Sichtfeld laden (Nur 1x pro Frame!) ---
+        if (staticGrid) {
+            localObstacles = staticGrid.getEntitiesInArea(this.x, this.y, maxRadius).filter(e =>
+                (e.type === 'plant' || e.type === 'stone') && e.alive !== false
+            );
+        }
+
         for (const entity of candidates) {
             const dx = entity.x - this.x;
             const dy = entity.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            const lenSq = dx * dx + dy * dy; // Distanz zum Quadrat für schnellere Mathe
+            const distance = Math.sqrt(lenSq);
 
             // 1. Check: Ist das Ziel innerhalb der maximalen Sichtweite?
             if (distance > maxRadius) continue;
@@ -538,29 +547,26 @@ class AnimalCell extends BaseCell {
 
             if (angleDiff <= this.genome.sightAngle) {
 
-                // --- NEUE SCORE-BERECHNUNG (Distanz vs. Ähnlichkeit der Größe) ---
-                // Wir berechnen den absoluten Unterschied zwischen Jäger und Beute
-                const sizeDiff = Math.abs(this.size - entity.size);
+                if (!this.hasLineOfSight(entity, localObstacles)) continue;
 
-                // Strafe für Größenunterschied:
-                // Jede Einheit Unterschied zählt so viel wie 25 Pixel zusätzliche Distanz.
-                // Ein Tier, das genau so groß ist wie der Jäger (Diff 0), hat den besten Score!
+                // --- SCORE-BERECHNUNG (Distanz vs. Ähnlichkeit der Größe) ---
+                const sizeDiff = Math.abs(this.size - entity.size);
                 const sizePenalty = sizeDiff * 25;
                 let score = distance + sizePenalty;
 
+                // --- KORREKTUR: Target-Stickiness (Fokus behalten) ---
+                // Wenn dieses Tier unser aktuelles Ziel ist, bekommt es einen massiven
+                // Score-Bonus (Abzug), damit wir nicht wegen ein paar Pixeln das Ziel wechseln!
+                if (entity === currentTarget) {
+                    score -= window.SETTINGS.HUNT_TARGET_STICKINESS;
+                }
 
-                // --- NEU: Rudelbildung verhindern & Rivalitäts-Strafe ---
+                // Rudelbildung verhindern & Rivalitäts-Strafe
                 for (const hunter of nearbyHunters) {
-
-                    // 1. ZIEL-MONOPOL: Jagt dieser andere Jäger genau dieses Beutetier?
                     if (hunter.target === entity) {
-                        // Massive Strafe von 400! Das wirkt auf unseren Jäger so, als wäre
-                        // dieses Beutetier 400 Pixel weiter weg. Er sucht sich sofort etwas anderes.
                         score += 400;
                     }
 
-                    // 2. RIVALEN-AURA (Nur für erwachsene Jäger wie vorher):
-                    // Generelles Meiden von Orten, wo dicke Konkurrenten rumhängen
                     if (isAdultCarnivore && hunter.isAdult()) {
                         const rdx = entity.x - hunter.x;
                         const rdy = entity.y - hunter.y;
@@ -573,15 +579,49 @@ class AnimalCell extends BaseCell {
                     }
                 }
 
-                // Ist dieser Score besser (niedriger) als unser bisheriger Bestwert?
+                // Ist dieser Score besser?
                 if (score < bestScore) {
                     bestScore = score;
                     bestTarget = entity;
                 }
             }
         }
-
         return bestTarget;
+    }
+
+    // NEU: Universeller Sichtlinien-Check für alle Tiere
+    hasLineOfSight(target, obstacles) {
+        const dx = target.x - this.x;
+        const dy = target.y - this.y;
+        const lenSq = dx * dx + dy * dy;
+
+        for (let i = 0; i < obstacles.length; i++) {
+            const obs = obstacles[i];
+
+            // 1. Schneller Bounding-Box Check
+            const minX = Math.min(this.x, target.x) - obs.size;
+            const maxX = Math.max(this.x, target.x) + obs.size;
+            const minY = Math.min(this.y, target.y) - obs.size;
+            const maxY = Math.max(this.y, target.y) + obs.size;
+
+            if (obs.x < minX || obs.x > maxX || obs.y < minY || obs.y > maxY) continue;
+
+            // 2. Mathematische Projektion auf die Sichtlinie
+            const px = obs.x - this.x;
+            const py = obs.y - this.y;
+            let t = (px * dx + py * dy) / lenSq;
+
+            if (t >= 0 && t <= 1) {
+                const closestX = this.x + t * dx;
+                const closestY = this.y + t * dy;
+                const distSqToLine = (closestX - obs.x)**2 + (closestY - obs.y)**2;
+
+                if (distSqToLine <= (obs.size * 0.8)**2) {
+                    return false; // Sicht ist durch dieses Objekt blockiert!
+                }
+            }
+        }
+        return true; // Freie Sicht!
     }
 
     checkTargetTimeout() {

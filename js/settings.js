@@ -14,7 +14,7 @@ window.SETTINGS = {
     SPAWN_CARNIVORES: 5,  // Startanzahl Fleischfresser
     SPAWN_SNAKES: 1,
     SPAWN_SUPER_STONES: 1, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
-    SPAWN_NORMAL_STONES: 15, // Anzahl normale Steine
+    SPAWN_NORMAL_STONES: 30, // Anzahl normale Steine
 
     // ==========================================
     // POPULATIONS-GRENZEN (GEBURTENKONTROLLE)
@@ -23,7 +23,7 @@ window.SETTINGS = {
     MAX_HERBIVORE_FOR_BIRTH: 200, // Ab dieser Anzahl Räuber auf der Karte bekommen sie keine Kinder mehr
     HERBIVORE_OVERPOPULATION_START: 60, // Ab hier sinkt die Kinderzahl von Pflanzenfressern allmählich
     HERBIVORE_OVERPOPULATION_MAX: 130, // Ab hier bekommen Pflanzenfresser nur noch 1 Kind
-    PLANTS_MAX_COUNT: 1100,
+    PLANTS_MAX_COUNT: 1500,
 
     // ==========================================
     // FLUCHTVERHALTEN (FLEE)
@@ -64,12 +64,12 @@ window.SETTINGS = {
     // ==========================================
     // GENOME & MUTATION
     // ==========================================
-    HERB_MAX_SIZE_BASE: 8,      // Start-Maximalgröße Pflanzenfresser
-    CARN_MAX_SIZE_BASE: 10,     // Start-Maximalgröße rote Jäger
-    SNAKE_MAX_SIZE_BASE: 9,     // Start-Maximalgröße Schlangen
+    HERB_MAX_SIZE_BASE: 6,      // Start-Maximalgröße Pflanzenfresser
+    CARN_MAX_SIZE_BASE: 8,     // Start-Maximalgröße rote Jäger
+    SNAKE_MAX_SIZE_BASE: 7,     // Start-Maximalgröße Schlangen
 
     MUTATION_SIZE_STEP: 2.0,    // Wie stark die Größe pro Mutation schwanken kann (Bereich: +/- 1.0)
-    MUTATION_MAX_SIZE_CAP: 15,  // Die absolute Obergrenze, die ein Tier durch Mutation erreichen kann
+    MUTATION_MAX_SIZE_CAP: 10,  // Die absolute Obergrenze, die ein Tier durch Mutation erreichen kann
 
     // ==========================================
     // GENOME BASIS-WERTE
@@ -82,20 +82,29 @@ window.SETTINGS = {
     GENOME_MAX_ENERGY: 100,
     GENOME_MIN_AGE_REPRO: 1000,
 
-    // ==========================================
+// ==========================================
     // PFLANZEN-WACHSTUM
     // ==========================================
     PLANT_MAX_SIZE_SUPER_BASE: 10,
     PLANT_MAX_SIZE_NORMAL: 10,
     PLANT_GROWTH_RATE_STARTUP: 0.2,
-    PLANT_GROWTH_RATE_NORMAL: 0.01,
+
+    // --- NEU: Dicken-Wachstum verdoppelt (vorher 0.01) ---
+    // So erholen sie sich schneller, wenn sie angeknabbert wurden
+    PLANT_GROWTH_RATE_NORMAL: 0.02,
+
     PLANT_GROWTH_RATE_SUPER_MULT: 5.0,
     PLANT_REQUIRED_AGE_STARTUP: 10,
     PLANT_REQUIRED_AGE_SUPER: 30,
-    PLANT_REQUIRED_AGE_NORMAL: 100,
+
+    // --- NEU: Sie dürfen früher neue Ableger bilden (vorher 100) ---
+    PLANT_REQUIRED_AGE_NORMAL: 80,
+
     PLANT_GROW_CHANCE_STARTUP: 0.5,
     PLANT_GROW_CHANCE_SUPER: 0.5,
-    PLANT_GROW_CHANCE_NORMAL: 0.1,
+
+    // --- NEU: Die Chance auf einen Ableger pro Frame leicht erhöht (vorher 0.1) ---
+    PLANT_GROW_CHANCE_NORMAL: 0.15,
 
     // ==========================================
     // PFLANZENFRESSER (HERBIVORE)

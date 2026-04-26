@@ -65,6 +65,11 @@ class CarnivoreCell extends AnimalCell {
         const previousThreat = this.threat; // <--- NEU: Alten Verfolger für diesen Frame kurz merken!
         this.threat = null;
 
+        // --- NEU: Hindernisse für den Flucht-Sicht-Check laden ---
+        const localObstacles = staticGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
+            (e.type === 'plant' || e.type === 'stone') && e.alive !== false
+        );
+
         // Fluchtinstinkt greift erst, wenn es kein Baby mehr ist
         if (this.berserkTimer <= 0) {
             const largerPredators = entitiesInArea.filter(e =>
@@ -85,7 +90,9 @@ class CarnivoreCell extends AnimalCell {
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
                 if (dist <= panicRadius) {
-                    activeThreats.push(p); // Alle größeren Jäger sammeln
+                    if (this.hasLineOfSight(p, localObstacles)) {
+                        activeThreats.push(p);
+                    }
                 }
             }
 
@@ -165,7 +172,7 @@ class CarnivoreCell extends AnimalCell {
             // --- 3. NORMALE JAGD ---
             if ((this.ignoreTargetTimer || 0) <= 0) {
                 // Wir suchen regelmäßig (alle 10 Frames) oder wenn wir kein Ziel haben
-                if (!this.target || !this.target.alive || this.age % 10 === 0) {
+                if (!this.target || !this.target.alive || this.age % 60 === 0) {
                     // Für die Jagd schauen wir wieder etwas weiter
                     const huntEntities = dynamicGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
 
@@ -174,7 +181,7 @@ class CarnivoreCell extends AnimalCell {
                         e.alive &&
                         e.size <= this.size
                     );
-                    let newTarget = this.findBestPreyInSight(herbivores, dynamicGrid, this.target);
+                    let newTarget = this.findBestPreyInSight(herbivores, dynamicGrid, staticGrid, this.target);
 
                     // Nur nach anderen Räubern suchen, wenn es erlaubt ist
                     if (!newTarget && this.attacksCarnivores) {
@@ -184,7 +191,7 @@ class CarnivoreCell extends AnimalCell {
                             e !== this &&
                             e.size <= this.size
                         );
-                        newTarget = this.findBestPreyInSight(smallerCarnivores, dynamicGrid, this.target);
+                        newTarget = this.findBestPreyInSight(smallerCarnivores, dynamicGrid, staticGrid, this.target);
                     }
 
                     if (newTarget) {

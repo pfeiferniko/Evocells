@@ -22,7 +22,7 @@ class HerbivoreCell extends AnimalCell {
         // --- NEU: 5% Chance auf nicht-vererbbaren Riesenwuchs ---
         if (allowGiant && Math.random() < 0.05) {
             this.isGiant = true;
-            this.maxSize = this.genome.maxSize + 6;
+            this.maxSize = 11;
             this.size = 5;
             // Die Riesen leuchten auffällig Gold/Gelb, damit du sie sofort erkennst
             this.color = `rgb(255, 255, 0)`;
@@ -46,7 +46,12 @@ class HerbivoreCell extends AnimalCell {
         }
 
         const predators = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
-            e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions
+            e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions && e.size >= this.size
+        );
+
+        // --- NEU: Hindernisse für den Flucht-Sicht-Check laden ---
+        const localObstacles = staticGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
+            (e.type === 'plant' || e.type === 'stone') && e.alive !== false
         );
 
         this.threat = null;
@@ -57,7 +62,9 @@ class HerbivoreCell extends AnimalCell {
             const dy = p.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= panicRadius) {
-                activeThreats.push(p); // Alle gefährlichen Jäger in die Liste packen!
+                if (this.hasLineOfSight(p, localObstacles)) {
+                    activeThreats.push(p); // Alle gefährlichen, SICHTBAREN Jäger in die Liste packen!
+                }
             }
         }
 

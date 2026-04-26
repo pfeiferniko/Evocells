@@ -406,11 +406,11 @@ function update() {
                     const herbivoreCount = globalHerbivoreCount;
 
                     if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_START) {
-                        numChildren = 10;
+                        numChildren = 30;
                     } else if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX) {
                         // Bereich 30 bis 100: Von 10 runter auf 1 Kind
                         const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
-                        numChildren = 10 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
+                        numChildren = 30 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
                     } else {
                         if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
                             numChildren = 0;
@@ -815,7 +815,7 @@ function update() {
                 }
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
-                if (!e.isEaten && Math.random() > 0.7) { // 30% Chance
+                if (!e.isEaten && e.reproductionCount < e.maxReproductions) { // && Math.random() > 0.7
 
                     // NEU: Farbe des Tiers auslesen (z.B. aus "rgb(200, 100, 50)" die Zahlen holen)
                     const rgbMatch = e.color.match(/\d+/g);
