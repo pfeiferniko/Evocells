@@ -24,5 +24,6 @@ class SnakeCell extends CarnivoreCell {
         this.maxReproductions = window.SETTINGS.SNAKE_MAX_REPRODUCTIONS;
         this.birthCooldown = window.SETTINGS.SNAKE_COOLDOWN_REPRO;
         this.startTailLength = 8; // Schlangenbabys sind sofort lang!
+        this.speedMultiplier = 1.1;
     }
 }

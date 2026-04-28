@@ -6,8 +6,17 @@ let WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
 const GRID_SIZE = window.SETTINGS.GRID_SIZE || 50;
 let staticGrid, dynamicGrid;
 
+let mouseX = 0;
+let mouseY = 0;
+
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
+let simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
+
+let globalHerbivoreCount = 0;
+let globalCarnivoreCount = 0;
+let globalPlantCount = 0;
+let globalGiantCount = 0;
 
 // --- PLANKTON / WASSERSTAUB ---
 const PLANKTON_COUNT = 150; // Anzahl der Partikel
@@ -39,6 +48,26 @@ if (debugBtn) {
         } else {
             debugBtn.innerText = "Debug-Linien: AUS";
             debugBtn.style.color = "#555";
+        }
+    });
+}
+
+// --- NEU: FPS-ANZEIGE LOGIK ---
+let showFps = false; // Standardmäßig AN
+const fpsBtn = document.getElementById('fps-btn');
+
+if (fpsBtn) {
+    fpsBtn.innerText = "FPS: AUS";
+    fpsBtn.style.color = "#555";
+
+    fpsBtn.addEventListener('click', () => {
+        showFps = !showFps;
+        if (showFps) {
+            fpsBtn.innerText = "FPS: AN";
+            fpsBtn.style.color = "#999";
+        } else {
+            fpsBtn.innerText = "FPS: AUS";
+            fpsBtn.style.color = "#555";
         }
     });
 }
@@ -139,13 +168,35 @@ function createParticles(x, y, color, count, baseSize = null) {
         });
     }
 }
+// Maus-Bewegung tracken für die Vorschau
+canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const factor = pixelModes[currentPixelMode].factor;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    mouseX = (e.clientX - rect.left) * scaleX / factor;
+    mouseY = (e.clientY - rect.top) * scaleY / factor;
+});
+
+// Klick-Logik
+canvas.addEventListener('mousedown', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    const factor = pixelModes[currentPixelMode].factor;
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const clickX = (e.clientX - rect.left) * scaleX / factor;
+    const clickY = (e.clientY - rect.top) * scaleY / factor;
+
+    // handleShopClick gibt true zurück, wenn der Klick vom Shop-System "verbraucht" wurde
+    handleShopClick(clickX, clickY);
+});
 
 function init() {
     console.log("Initializing...");
-    startTime = Date.now(); // NEU: Stoppuhr starten
 
     const isPortrait = window.innerHeight > window.innerWidth;
-
     if (isPortrait) {
         WORLD_WIDTH = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
         WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
@@ -154,98 +205,122 @@ function init() {
         WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
     }
 
-    // Globale Referenzen für andere Klassen
     window.WORLD_WIDTH = WORLD_WIDTH;
     window.WORLD_HEIGHT = WORLD_HEIGHT;
 
-    // Nutze die neue Funktion zum ersten Mal (Standard: 1.0)
     applyResolution(pixelModes[currentPixelMode].factor);
 
     staticGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
     dynamicGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
 
-    // Wasserstaub generieren
+    // Wasserstaub (Plankton) generieren (Dieser ist nur visuell und wird immer neu erstellt)
     for (let i = 0; i < PLANKTON_COUNT; i++) {
         planktons.push({
             x: Math.random() * WORLD_WIDTH,
             y: Math.random() * WORLD_HEIGHT,
             baseVx: (Math.random() - 0.5) * 0.2,
             baseVy: (Math.random() - 0.5) * 0.2,
-
-            // --- NEU: Größer und sichtbarer für die Pixeloptik ---
-            // Vorher: 0.5 bis 2. Jetzt: 2 bis 5 (Damit überleben sie die Skalierung)
             size: Math.random() * 2 + 1,
-
-            // Vorher: 0.05 bis 0.25. Jetzt: 0.2 bis 0.5 (Deutlich kräftiger)
             opacity: Math.random() * 0.3 + 0.2,
-
             wobbleSpeed: Math.random() * 0.002 + 0.001,
             wobbleOffset: Math.random() * Math.PI * 2
         });
     }
 
-    // 1. Steine generieren und in einer extra Liste kurz merken
+    // --- NEU: VERSUCHEN ZU LADEN ---
+    if (loadSimulationState()) {
+        console.log("State loaded successfully!");
+    } else {
+        console.log("No valid save state found. Starting fresh.");
+        startTime = Date.now(); // Stoppuhr starten
+        generateInitialWorld();
+    }
+
+    animate();
+}
+
+function generateInitialWorld() {
     const stones = [];
 
-    // 3 SUPER-Steine
-    for (let i = 0; i < window.SETTINGS.SPAWN_SUPER_STONES; i++) {
+    // 1. Steine generieren
+    for (let i = 0; i < 1; i++) {
         const spawnX = Math.max(600, Math.random() * (WORLD_WIDTH - 600));
         const spawnY = Math.max(300, Math.random() * (WORLD_HEIGHT - 300));
         const size = 20 + Math.random() * 20;
-        const stone = new StoneCell(spawnX, spawnY, size, true); // true = isSuper
+        const stone = new StoneCell(spawnX, spawnY, size, false);
         stones.push(stone);
         entities.push(stone);
         staticGrid.add(stone);
     }
 
-    // NORMALE Steine generieren (mit Sicherheitsabstand zu Super-Steinen)
-    for (let i = 0; i < window.SETTINGS.SPAWN_NORMAL_STONES; i++) {
-        let spawnX, spawnY;
-        let tooClose = true;
-        let attempts = 0;
-
-        // Wir versuchen bis zu 50 Mal, einen freien Platz zu finden
-        while (tooClose && attempts < 50) {
-            spawnX = Math.max(100, Math.random() * (WORLD_WIDTH - 100));
-            spawnY = Math.max(100, Math.random() * (WORLD_HEIGHT - 100));
-            tooClose = false;
-
-            // Prüfen, ob der neue Punkt zu nah an einem Super-Stein liegt
-            for (const existingStone of stones) {
-                if (existingStone.isSuper) {
-                    const dx = spawnX - existingStone.x;
-                    const dy = spawnY - existingStone.y;
-
-                    // 250 Pixel Sicherheitsabstand (250 * 250 = 62500 für die schnelle Abfrage)
-                    if (dx * dx + dy * dy < 100000) {
-                        tooClose = true;
-                        break; // Abbrechen und neue Koordinaten würfeln
-                    }
-                }
-            }
-            attempts++;
-        }
-
-        const size = 10 + Math.random() * 20;
-        const stone = new StoneCell(spawnX, spawnY, size, false); // false = normal
-        stones.push(stone);
-        entities.push(stone);
-        staticGrid.add(stone);
-    }
-
-    // 2. Pflanzen um die Steine herum spawnen
+    // 2. Pflanzen generieren
     stones.forEach(targetStone => {
         for (let i = 0; i < 2; i++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = targetStone.size + 5 + Math.random() * 15;
+            let spawnX = Math.max(50, Math.min(WORLD_WIDTH - 50, targetStone.x + Math.cos(angle) * dist));
+            let spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, targetStone.y + Math.sin(angle) * dist));
+            const plant = new PlantSegment(spawnX, spawnY, null, targetStone.isSuper);
+            entities.push(plant);
+            staticGrid.add(plant);
+        }
+    });
 
-            let spawnX = targetStone.x + Math.cos(angle) * dist;
-            let spawnY = targetStone.y + Math.sin(angle) * dist;
+    // 3. Tiere generieren
+    for (let i = 0; i < 5; i++) {
+        const initialGenome = new Genome();
+        initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
+        initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
+        let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
+        entities.push(herbivore);
+        addInitialTail(herbivore, entities);
+    }
 
-            spawnX = Math.max(50, Math.min(WORLD_WIDTH - 50, spawnX));
-            spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, spawnY));
+    console.log("Entities created:", entities.length);
+}
 
-            // NEU: Übergibt den Status des Steins an die Pflanze
+function generateInitialWorld2() {
+    const stones = [];
+
+    // 1. Steine generieren
+    for (let i = 0; i < window.SETTINGS.SPAWN_SUPER_STONES; i++) {
+        const spawnX = Math.max(600, Math.random() * (WORLD_WIDTH - 600));
+        const spawnY = Math.max(300, Math.random() * (WORLD_HEIGHT - 300));
+        const size = 20 + Math.random() * 20;
+        const stone = new StoneCell(spawnX, spawnY, size, true);
+        stones.push(stone);
+        entities.push(stone);
+        staticGrid.add(stone);
+    }
+
+    for (let i = 0; i < window.SETTINGS.SPAWN_NORMAL_STONES; i++) {
+        let spawnX, spawnY, tooClose = true, attempts = 0;
+        while (tooClose && attempts < 50) {
+            spawnX = Math.max(100, Math.random() * (WORLD_WIDTH - 100));
+            spawnY = Math.max(100, Math.random() * (WORLD_HEIGHT - 100));
+            tooClose = false;
+            for (const existingStone of stones) {
+                if (existingStone.isSuper) {
+                    const dx = spawnX - existingStone.x, dy = spawnY - existingStone.y;
+                    if (dx * dx + dy * dy < 100000) { tooClose = true; break; }
+                }
+            }
+            attempts++;
+        }
+        const size = 10 + Math.random() * 20;
+        const stone = new StoneCell(spawnX, spawnY, size, false);
+        stones.push(stone);
+        entities.push(stone);
+        staticGrid.add(stone);
+    }
+
+    // 2. Pflanzen generieren
+    stones.forEach(targetStone => {
+        for (let i = 0; i < 2; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = targetStone.size + 5 + Math.random() * 15;
+            let spawnX = Math.max(50, Math.min(WORLD_WIDTH - 50, targetStone.x + Math.cos(angle) * dist));
+            let spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, targetStone.y + Math.sin(angle) * dist));
             const plant = new PlantSegment(spawnX, spawnY, null, targetStone.isSuper);
             entities.push(plant);
             staticGrid.add(plant);
@@ -257,7 +332,6 @@ function init() {
         const initialGenome = new Genome();
         initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
         initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
-
         let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         entities.push(herbivore);
         addInitialTail(herbivore, entities);
@@ -266,7 +340,6 @@ function init() {
         const initialGenome = new Genome();
         initialGenome.speed = window.SETTINGS.CARN_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.CARN_SPEED_VARIANCE * 2;
         initialGenome.maxSize = window.SETTINGS.CARN_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
-
         let carnivore = new CarnivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         carnivore.size = 3;
         entities.push(carnivore);
@@ -276,16 +349,12 @@ function init() {
         const initialGenome = new Genome();
         initialGenome.speed = window.SETTINGS.SNAKE_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.SNAKE_SPEED_VARIANCE * 2;
         initialGenome.maxSize = window.SETTINGS.SNAKE_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
-
         let snake = new SnakeCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         snake.size = 3;
         entities.push(snake);
-
-        // Die Schlange startet direkt mit 8 Gliedern!
         addInitialTail(snake, entities, 8);
     }
     console.log("Entities created:", entities.length);
-    animate();
 }
 
 function addInitialTail(animal, targetArray, length = 3) {
@@ -308,10 +377,10 @@ function update() {
         }
     });
 
-    let globalHerbivoreCount = 0;
-    let globalCarnivoreCount = 0;
-    let globalPlantCount = 0;
-    let globalGiantCount = 0;
+    globalHerbivoreCount = 0;
+    globalCarnivoreCount = 0;
+    globalPlantCount = 0;
+    globalGiantCount = 0;
 
     for (let i = 0; i < entities.length; i++) {
         const ent = entities[i];
@@ -402,33 +471,18 @@ function update() {
                 let numChildren;
 
                 if (e instanceof HerbivoreCell) {
-                    // 1. Aktuelle Anzahl der Pflanzenfresser zählen
                     const herbivoreCount = globalHerbivoreCount;
 
-                    if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_START) {
-                        numChildren = 30;
-                    } else if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX) {
-                        // Bereich 30 bis 100: Von 10 runter auf 1 Kind
-                        const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
-                        numChildren = 30 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
+                    if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
+                        numChildren = 0;
                     } else {
-                        if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
-                            numChildren = 0;
-                        } else {
-                            numChildren = 1;
-                        }
+                        numChildren = 1;
                     }
-
-                    // Da wir keine halben Kinder haben können:
-                    numChildren = Math.round(numChildren);
                 } else if (e instanceof SnakeCell) {
                     numChildren = window.SETTINGS.SNAKE_LITTER_SIZE;
                 } else {
-                    // --- NEU: GEBURTENKONTROLLE FÜR FLEISCHFRESSER ---
-                    // Zählt WIRKLICH NUR die roten Fleischfresser
                     const carnivoreCount = globalCarnivoreCount;
 
-                    // Wenn es mehr als 8 Räuber auf der Karte gibt, bekommen sie gar keine Kinder mehr!
                     if (carnivoreCount >= window.SETTINGS.MAX_CARNIVORES_FOR_BIRTH) {
                         numChildren = 0;
                     } else {
@@ -451,14 +505,17 @@ function update() {
                         let child;
 
                         if (e instanceof HerbivoreCell) {
-                            // Wir prüfen, ob noch ein Platz für einen Riesen frei ist
-                            const canBecomeGiant = globalGiantCount < 5;
-                            child = new HerbivoreCell(childX, childY, newGenome, canBecomeGiant);
-                            if (child.isGiant) globalGiantCount++;
+                            child = new HerbivoreCell(childX, childY, newGenome, false);
+                            // NEU: Holt sich die Punkte aus den Settings
+                            simScore += window.SETTINGS.SCORE_HERBIVORE_BIRTH;
                         } else if (e instanceof SnakeCell) {
                             child = new SnakeCell(childX, childY, newGenome);
+                            // NEU: Holt sich die Punkte aus den Settings
+                            simScore += window.SETTINGS.SCORE_SNAKE_BIRTH;
                         } else {
                             child = new CarnivoreCell(childX, childY, newGenome);
+                            // NEU: Holt sich die Punkte aus den Settings
+                            simScore += window.SETTINGS.SCORE_CARNIVORE_BIRTH;
                         }
 
                         if (child.isGiant) {
@@ -815,7 +872,7 @@ function update() {
                 }
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
-                if (!e.isEaten && e.reproductionCount < e.maxReproductions) { // && Math.random() > 0.7
+               /* if (!e.isEaten && e.reproductionCount < e.maxReproductions) { // && Math.random() > 0.7
 
                     // NEU: Farbe des Tiers auslesen (z.B. aus "rgb(200, 100, 50)" die Zahlen holen)
                     const rgbMatch = e.color.match(/\d+/g);
@@ -833,7 +890,7 @@ function update() {
                     superPlant.isTip = true;
                     newEntities.push(superPlant);
                     staticGrid.add(superPlant);
-                }
+                }*/
 
                 isAlive = false;
                 e.alive = false;
@@ -953,10 +1010,13 @@ function update() {
                     }
                 }
 
+                const currentGen = e.generation || 0;
+
                 // Wachstum nur, wenn wirklich Platz ist UND das globale Limit nicht erreicht ist
-                if (plantNeighborsCount <= 2 && globalPlantCount < window.SETTINGS.PLANTS_MAX_COUNT) {
+                if (plantNeighborsCount <= 2 && globalPlantCount < window.SETTINGS.PLANTS_MAX_COUNT && currentGen < 20) {
                     e.isTip = false;
                     const child = new PlantSegment(spawnX, spawnY, e, e.isSuper, e.baseColor);
+                    child.generation = currentGen + 1;
                     newEntities.push(child);
                     staticGrid.add(child);
                     globalPlantCount++; // Sofort mitzählen!
@@ -969,7 +1029,7 @@ function update() {
 
         // Stein-Spawning und Kontrolle
         if (e.type === 'stone') {
-            const checkRadius = e.size + 40;
+            const checkRadius = e.size + 30;
             const nearby = staticGrid.getEntitiesInArea(e.x, e.y, checkRadius);
 
             // --- KORREKTUR: Strikte Distanzprüfung ---
@@ -997,9 +1057,9 @@ function update() {
                 if (!e.isSuper && nearbyPlantsCount < 3 && Math.random() < 0.2) shouldSpawn = true;
             } else {
                 if (e.isSuper) {
-                    if (nearbyPlantsCount < 5 && Math.random() < 0.05) shouldSpawn = true;
+                    if (nearbyPlantsCount < 7 && Math.random() < 0.15) shouldSpawn = true;
                 } else {
-                    if (nearbyPlantsCount < 3 && Math.random() < 0.05) shouldSpawn = true;
+                    if (nearbyPlantsCount < 4 && Math.random() < 0.15) shouldSpawn = true;
                 }
             }
 
@@ -1102,6 +1162,172 @@ function animate(timestamp) {
 
 window.addEventListener('load', init);
 
+// ==========================================
+// PERSISTENZ (SPEICHERN & LADEN)
+// ==========================================
+
+let isResetting = false; // <--- NEU: Schalter, um das Speichern beim Neustart zu blockieren
+
+function saveSimulationState() {
+    const state = {
+        runTime: Date.now() - startTime,
+        score: simScore, // <--- NEU: Punktestand ins Savegame packen
+        entities: []
+    };
+
+    // 1. Temporäre IDs für alle vergeben (damit wir Verknüpfungen wiederherstellen können)
+    entities.forEach((e, i) => e._saveId = i);
+
+    // 2. Objekte in reines JSON übersetzen
+    state.entities = entities.map(e => {
+        let data = {
+            id: e._saveId,
+            className: e.constructor.name,
+            x: e.x, y: e.y, size: e.size, alive: e.alive,
+            color: e.color
+        };
+
+        if (e instanceof StoneCell) {
+            data.isSuper = e.isSuper;
+        } else if (e instanceof PlantSegment) {
+            data.isSuper = e.isSuper;
+            data.baseColor = e.baseColor;
+            data.age = e.age;
+            data.isTip = e.isTip;
+            data.generation = e.generation || 0; // <--- NEU
+            data.parentId = e.parent ? e.parent._saveId : null;
+        } else if (e.type === 'tail') {
+            data.branch = e.branch;
+            data.depth = e.depth;
+            data.spineX = e.spineX;
+            data.spineY = e.spineY;
+            data.dotColor = e.dotColor;
+            data.parentId = e.parent ? e.parent._saveId : null;
+        } else if (e instanceof AnimalCell) {
+            data.genome = { ...e.genome };
+            data.angle = e.angle;
+            data.energy = e.energy;
+            data.age = e.age;
+            data.reproductionCount = e.reproductionCount;
+            data.speedMultiplier = e.speedMultiplier;
+            data.agingFactor = e.agingFactor;
+            data.dotColor = e.dotColor;
+            data.isGiant = e.isGiant || false;
+            // Ziele/Wegpunkte absichtlich NICHT speichern, damit sie nicht verbuggen
+            data.tailSegmentIds = e.tailSegments.map(t => t._saveId);
+        }
+        return data;
+    });
+
+    try {
+        localStorage.setItem('evoSimState', JSON.stringify(state));
+        // NEU: Punkte in einen separaten Tresor legen
+        localStorage.setItem('evoSimScore', simScore);
+    } catch(err) {
+        console.warn("Konnte nicht speichern (LocalStorage voll?)", err);
+    }
+}
+
+function loadSimulationState() {
+    const raw = localStorage.getItem('evoSimState');
+    if (!raw) return false;
+
+    let state;
+    try { state = JSON.parse(raw); } catch(e) { return false; }
+    if (!state || !state.entities || state.entities.length === 0) return false;
+
+    // Simulationstimer wiederherstellen (damit die Start-Wachstumsphase nicht neu triggert)
+    startTime = Date.now() - state.runTime;
+    simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
+
+    entities = [];
+    const idMap = new Map();
+
+    // Durchlauf 1: Alle Instanzen als korrekte Klassen wiedererschaffen
+    state.entities.forEach(data => {
+        let e;
+        if (data.className === 'StoneCell') {
+            e = new StoneCell(data.x, data.y, data.size, data.isSuper);
+            e.color = data.color; // Konstruktor-Farbe überschreiben
+        } else if (data.className === 'PlantSegment') {
+            e = new PlantSegment(data.x, data.y, null, data.isSuper, data.baseColor);
+            e.size = data.size; e.age = data.age; e.isTip = data.isTip; e.color = data.color;
+            e.generation = data.generation || 0;
+        } else if (data.className === 'TailSegment') {
+            e = new TailSegment(data.x, data.y, null, data.size, data.branch, data.depth);
+            e.spineX = data.spineX; e.spineY = data.spineY; e.color = data.color; e.dotColor = data.dotColor;
+        } else if (['HerbivoreCell', 'CarnivoreCell', 'SnakeCell'].includes(data.className)) {
+            let gen = new Genome(data.genome);
+            if (data.className === 'HerbivoreCell') e = new HerbivoreCell(data.x, data.y, gen, false);
+            if (data.className === 'CarnivoreCell') e = new CarnivoreCell(data.x, data.y, gen);
+            if (data.className === 'SnakeCell') e = new SnakeCell(data.x, data.y, gen);
+
+            e.size = data.size; e.angle = data.angle; e.energy = data.energy; e.age = data.age;
+            e.reproductionCount = data.reproductionCount; e.speedMultiplier = data.speedMultiplier;
+            e.agingFactor = data.agingFactor; e.color = data.color; e.dotColor = data.dotColor;
+
+            if (data.isGiant) {
+                e.isGiant = true;
+                e.maxReproductions = Infinity;
+            }
+            e.tailSegments = []; // Wird im 2. Durchlauf gefüllt
+            e._tailIds = data.tailSegmentIds;
+        }
+
+        if (e) {
+            e._loadParentId = data.parentId;
+            e.alive = data.alive;
+            idMap.set(data.id, e);
+            entities.push(e);
+
+            // Steine und Pflanzen direkt wieder ins statische Grid packen
+            if (e.type === 'stone' || e.type === 'plant') {
+                staticGrid.add(e);
+            }
+        }
+    });
+
+    // Durchlauf 2: Alle Referenzen (Elternteile & Schwänze) wieder verknüpfen
+    entities.forEach(e => {
+        if (e.type === 'plant' || e.type === 'tail') {
+            if (e._loadParentId !== undefined && e._loadParentId !== null) {
+                e.parent = idMap.get(e._loadParentId) || null;
+            }
+        }
+        if (e.type === 'animal' && e._tailIds) {
+            e.tailSegments = e._tailIds.map(id => idMap.get(id)).filter(Boolean);
+            delete e._tailIds;
+        }
+        delete e._loadParentId;
+    });
+
+    return true;
+}
+
+// Auto-Save alle 10 Sekunden
+setInterval(() => {
+    if (!isResetting && entities.length > 0) saveSimulationState();
+}, 10000);
+
+// Save beim Schließen / Aktualisieren des Tabs
+window.addEventListener('beforeunload', () => {
+    if (!isResetting && entities.length > 0) saveSimulationState();
+});
+
+// Neustart-Button Logik
+const resetBtn = document.getElementById('reset-btn');
+if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+        if(confirm("Simulation wird neu gestartet. Der Punktestand wird übernommen (und bei Bedarf wieder auf 1000 Punkte aufgefüllt).")) {
+            isResetting = true; // <--- WICHTIG: Speichern blockieren!
+            localStorage.removeItem('evoSimState');
+            if (simScore < 1000) {
+                localStorage.setItem('evoSimScore', 1000);
+            }
+            location.reload(); // Seite neu laden (startet mit frischem State)
+        }
+    });
+}
 
 // --- Impressum Logik ---
 const impressumBtn = document.getElementById('impressum-btn');

@@ -17,10 +17,10 @@ class HerbivoreCell extends AnimalCell {
         this.target = null;
         this.threat = null;
         this.genome.sightRange = window.SETTINGS.HERB_SIGHT_RANGE_MULTIPLIER;
+        this.genome.sightAngle = window.SETTINGS.HERB_SIGHT_ANGLE;
         this.birthCooldown = window.SETTINGS.HERB_COOLDOWN_REPRO;
 
-        // --- NEU: 5% Chance auf nicht-vererbbaren Riesenwuchs ---
-        if (allowGiant && Math.random() < 0.05) {
+        if (allowGiant) {
             this.isGiant = true;
             this.maxSize = 11;
             this.size = 5;

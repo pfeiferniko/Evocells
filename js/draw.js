@@ -21,8 +21,6 @@ function draw() {
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-
-
     // 1. Durchlauf: Hintergrund-Elemente (Sichtfenster, Pflanzen und Schwänze)
     entities.forEach(e => {
 
@@ -84,8 +82,6 @@ function draw() {
             }
         }
     });
-
-
 
     // 2. Durchlauf: Vordergrund-Elemente (Tierköpfe und Ziellinien)
     entities.forEach(e => {
@@ -245,31 +241,58 @@ function draw() {
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-// --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
+    // --- NEU: SCORE-ANZEIGE OBEN LINKS ---
     ctx.save();
 
-    // Die Schriftart und Ausrichtung einstellen
-    ctx.font = '16px sans-serif';
+    ctx.font = 'bold 20px sans-serif';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
 
-    // Ein leicht transparenter schwarzer Kasten als Hintergrund für bessere Lesbarkeit
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-    ctx.fillRect(10, 10, 180, 85);
+    const scoreText = `Punkte: ${simScore}`;
 
-    // Textfarbe auf Weiß setzen und die Zeilen schreiben
-    ctx.fillStyle = 'white';
+    // Kasten-Hintergrund dynamisch an die Textbreite anpassen
+    const textWidth = ctx.measureText(scoreText).width;
 
-    // Wir färben die FPS gelb/rot ein, wenn sie einbrechen
-    if (currentFps < 30) ctx.fillStyle = 'red';
-    else if (currentFps < 50) ctx.fillStyle = 'yellow';
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(10, 10, textWidth + 30, 40); // Die Box für die Punkte
 
-    ctx.fillText(`FPS: ${currentFps}`, 20, 20);
-
-    // Wieder auf Weiß für den Rest
-    ctx.fillStyle = 'white';
-    ctx.fillText(`Calc Time: ${currentProcessTime.toFixed(1)} ms`, 20, 45);
-    ctx.fillText(`Entities: ${entities.length}`, 20, 70);
+    // Schicke Gold/Gelbe Schrift für die Punkte
+    ctx.fillStyle = '#FFD700';
+    ctx.fillText(scoreText, 25, 20);
 
     ctx.restore();
+
+    // --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
+    if (showFps) {
+        ctx.save();
+
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        // Die Box muss höher (135) und etwas breiter (220) werden
+        const boxHeight = 135;
+        const startY = WORLD_HEIGHT - boxHeight - 10;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        ctx.fillRect(10, startY, 220, boxHeight);
+
+        ctx.fillStyle = 'white';
+
+        // Alle Infos sauber untereinander
+        ctx.fillText(`FPS: ${currentFps}`, 20, startY + 10);
+        ctx.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
+        ctx.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
+
+        // Die neuen Zähler
+        ctx.fillStyle = '#f1c40f'; // Leicht gelblich für Pflanzenfresser
+        ctx.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
+
+        ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
+        ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
+
+        ctx.restore();
+    }
+
+    drawShopUI();
 }

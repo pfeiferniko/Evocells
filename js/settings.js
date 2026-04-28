@@ -8,6 +8,13 @@ window.SETTINGS = {
     STARTUP_PHASE_DURATION: 3000, // Millisekunden für die anfängliche "Schnellwachstum"-Phase der Pflanzen
 
     // ==========================================
+    // PUNKTE-SYSTEM (SCORE)
+    // ==========================================
+    SCORE_HERBIVORE_BIRTH: 1,  // Punkte für ein Pflanzenfresser-Baby
+    SCORE_CARNIVORE_BIRTH: 50,  // Punkte für ein Fleischfresser-Baby
+    SCORE_SNAKE_BIRTH: 100,      // Punkte für ein Schlangen-Baby
+
+    // ==========================================
     // START-BEDINGUNGEN (SPAWN)
     // ==========================================
     SPAWN_HERBIVORES: 70, // Startanzahl Pflanzenfresser
@@ -109,7 +116,7 @@ window.SETTINGS = {
     // ==========================================
     // PFLANZENFRESSER (HERBIVORE)
     // ==========================================
-    HERB_BASE_SPEED: 1.0,
+    HERB_BASE_SPEED: 0.9,
     HERB_SPEED_VARIANCE: 0.1, // Wird +/- dazugerechnet (0.9 bis 1.1)
     HERB_MAX_REPRODUCTIONS: 2,
     HERB_ENERGY_REQUIRED_REPRO: 0.7, // 70% der Maximalenergie
@@ -118,11 +125,12 @@ window.SETTINGS = {
     HERB_COOLDOWN_REPRO: 600,
     HERB_METABOLISM_DISCOUNT: 0.6, // Nur 60% des normalen Verbrauchs
     HERB_SIGHT_RANGE_MULTIPLIER: 100,
+    HERB_SIGHT_ANGLE: Math.PI * 0.5,
 
     // ==========================================
     // FLEISCHFRESSER (CARNIVORE)
     // ==========================================
-    CARN_BASE_SPEED: 1.3,
+    CARN_BASE_SPEED: 1.4,
     CARN_SPEED_VARIANCE: 0.1, // Wird +/- dazugerechnet (1.2 bis 1.4)
     CARN_MAX_REPRODUCTIONS: 2,
     CARN_ENERGY_REQUIRED_REPRO: 0.9, // 90% der Maximalenergie
@@ -130,7 +138,7 @@ window.SETTINGS = {
     CARN_REPRO_FRAMES: 90,
     CARN_COOLDOWN_REPRO: 10000,
     CARN_SIGHT_RANGE_MULTIPLIER: 1000,
-    CARN_SIGHT_ANGLE: Math.PI * 0.8,
+    CARN_SIGHT_ANGLE: Math.PI,
 
 
     // ==========================================
@@ -138,7 +146,9 @@ window.SETTINGS = {
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
     SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
-    SNAKE_BASE_SPEED: 1.6, // Schlangen sind etwas schneller
+    SNAKE_BASE_SPEED: 1.6,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
     SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown
+
+
 };
