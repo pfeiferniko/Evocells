@@ -48,6 +48,21 @@ body {
     }
 }
 
+#canvas2D, #canvas3D, #uiCanvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#uiCanvas {
+    position: absolute;
+    z-index: 20; /* Über den Spielen */
+    pointer-events: auto; /* WICHTIG: Muss Klicks abfangen */
+}
+
 /* Entferne image-rendering aus dem normalen canvas Selektor */
 canvas {
     display: block;
@@ -62,50 +77,53 @@ canvas.pixel-mode {
     image-rendering: crisp-edges;
 }
 
-/* VOLLBILD-BUTTON: Oben rechts, ÜBER dem Canvas */
-#controls-bar {
+#canvas2D, #canvas3D {
     position: absolute;
-    top: -25px; /* Schiebt ihn direkt ÜBER den Canvas-Rand */
-    right: 0;
-    left: auto;
     z-index: 10;
-    display: flex;
-    gap: 8px;
 }
 
-#controls-bar button {
+/* Die HTML-Leiste muss über ALLEN Canvases liegen */
+#controls-bar, #bottom-bar {
+    position: absolute;
+    right: 0;
+    z-index: 100; /* Sehr hoch setzen */
+    display: flex;
+    gap: 12px; /* Abstand zwischen den Buttons */
+}
+
+#controls-bar {
+    top: -30px;
+}
+
+#bottom-bar {
+    bottom: -25px; /* Direkt unter den Rand schieben */
+}
+
+#controls-bar button, #bottom-bar button {
     background-color: transparent;
     border: none;
     color: #999;
     padding: 0;
     font-size: 11px;
     cursor: pointer;
+    z-index: 100;
     text-decoration: underline;
     transition: color 0.2s;
     font-family: sans-serif;
 }
 
-#controls-bar button:hover {
+#controls-bar button:hover, #bottom-bar button:hover {
     color: #fff;
 }
 
-#controls-bar button:active {
+#controls-bar button:active, #bottom-bar button:active {
     transform: scale(0.95);
 }
 
 /* IMPRESSUM-BUTTON: Unten rechts, wie ein Text-Link */
 #impressum-btn {
-    position: absolute;
-    right: 0;
-    bottom: -25px;         /* Schiebt ihn direkt UNTER den Canvas-Rand */
-    background: none;
-    border: none;
-    color: #666;           /* Dezentes Grau */
-    font-size: 11px;
-    cursor: pointer;
-    text-decoration: underline;
-    padding: 5px 0;
-    font-family: sans-serif;
+    color: #666 !important; /* Etwas dezenter als der Rest */
+    margin-left: 5px;       /* Kleiner extra Abstand zu den technischen Knöpfen */
 }
 
 #impressum-btn:hover {

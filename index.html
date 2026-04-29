@@ -9,17 +9,22 @@
 <body>
 <div id="game-container">
     <div id="controls-bar">
-        <button id="fps-btn">FPS: AN</button>
-        <button id="pixel-btn">Pixel: AUS</button>
         <button id="fullscreen-btn">Vollbild</button>
-        <button id="debug-btn">Debug-Linien: AN</button>
         <button id="demo-btn">Demo: AUS</button>
+        <button id="mode-btn">Ansicht: 2D</button>
         <button id="reset-btn" style="color: #ff5555;">Neustart</button>
     </div>
 
-    <canvas id="simulationCanvas" width="2000" height="1000"></canvas>
+    <canvas id="canvas2D" width="2000" height="1000"></canvas>
+    <canvas id="canvas3D" width="2000" height="1000" style="display: none;"></canvas>
+    <canvas id="uiCanvas" width="2000" height="1000"></canvas>
 
-    <button id="impressum-btn">Impressum</button>
+    <div id="bottom-bar">
+        <button id="fps-btn">FPS: AN</button>
+        <button id="pixel-btn">Pixel: AUS</button>
+        <button id="debug-btn">Debug: AN</button>
+        <button id="impressum-btn">Impressum</button>
+    </div>
 </div>
 
 <div id="impressum-modal" class="hidden">
@@ -40,6 +45,8 @@
     </div>
 </div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
 <script defer src="js/settings.js"></script>
 <script defer src="js/grid.js"></script>
 
@@ -50,6 +57,8 @@
 <script defer src="js/snake.js"></script>
 
 <script defer src="js/draw.js"></script>
+<script defer src="js/draw3d.js"></script>
+
 <script defer src="js/shop.js"></script>
 <script defer src="js/main.js"></script>
 </body>

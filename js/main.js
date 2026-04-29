@@ -1,7 +1,14 @@
 window.isDemoMode = false;
+window.is3DMode = false; // Neuer globaler Schalter
 
-const canvas = document.getElementById('simulationCanvas');
-const ctx = canvas.getContext('2d', { alpha: false });
+// main.js - ganz oben
+const canvas = document.getElementById('canvas2D');
+const canvas3D = document.getElementById('canvas3D');
+const uiCanvas = document.getElementById('uiCanvas');
+
+// WICHTIG: let statt const, damit wir den Pinsel wechseln können!
+window.ctx = canvas2D.getContext('2d');
+const uiCtx = uiCanvas.getContext('2d');
 
 let WORLD_WIDTH = window.SETTINGS.WORLD_BASE_WIDTH || 2000;
 let WORLD_HEIGHT = window.SETTINGS.WORLD_BASE_HEIGHT || 1000;
@@ -39,16 +46,16 @@ let lastFpsUpdate = 0;
 
 // Setze den initialen Text passend zur Variable
 if (debugBtn) {
-    debugBtn.innerText = "Debug-Linien: AUS";
+    debugBtn.innerText = "Debug: AUS";
     debugBtn.style.color = "#555";
     
     debugBtn.addEventListener('click', () => {
         showDebugLines = !showDebugLines;
         if (showDebugLines) {
-            debugBtn.innerText = "Debug-Linien: AN";
+            debugBtn.innerText = "Debug: AN";
             debugBtn.style.color = "#999";
         } else {
-            debugBtn.innerText = "Debug-Linien: AUS";
+            debugBtn.innerText = "Debug: AUS";
             debugBtn.style.color = "#555";
         }
     });
@@ -167,6 +174,26 @@ if (demoBtn) {
     });
 }
 
+const modeBtn = document.getElementById('mode-btn');
+if (modeBtn) {
+    modeBtn.addEventListener('click', () => {
+        window.is3DMode = !window.is3DMode;
+
+        if (window.is3DMode) {
+            modeBtn.innerText = "Ansicht: 3D";
+            modeBtn.style.color = "#999";
+            canvas.style.display = 'none';      // 2D verstecken
+            canvas3D.style.display = 'block';   // 3D anzeigen
+        } else {
+            modeBtn.innerText = "Ansicht: 2D";
+            modeBtn.style.color = "#555";
+            canvas.style.display = 'block';     // 2D anzeigen
+            canvas3D.style.display = 'none';    // 3D verstecken
+            uiCtx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT); // UI-Scheibe putzen
+        }
+    });
+}
+
 // Wir definieren alle unsere gewünschten Stufen in einer einfachen Liste
 const pixelModes = [
     { label: "AUS", factor: 1.0 },
@@ -194,22 +221,32 @@ if (pixelBtn) {
     });
 }
 
-// Neue Funktion zum Anwenden der Auflösung
 function applyResolution(factor) {
-    // 1. Interne Canvas-Größe ändern
     canvas.width = WORLD_WIDTH * factor;
     canvas.height = WORLD_HEIGHT * factor;
+    canvas3D.width = WORLD_WIDTH * factor;
+    canvas3D.height = WORLD_HEIGHT * factor;
+    uiCanvas.width = WORLD_WIDTH * factor;
+    uiCanvas.height = WORLD_HEIGHT * factor;
 
-    // 2. Den Pinsel-Maßstab anpassen
-    // Wichtig: setTransform stellt sicher, dass alte Skalierungen gelöscht werden
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.scale(factor, factor);
 
-    // 3. CSS-Filter umschalten
+    uiCtx.setTransform(1, 0, 0, 1, 0, 0);
+    uiCtx.scale(factor, factor);
+
+    if (typeof renderer !== 'undefined') {
+        renderer.setSize(canvas3D.width, canvas3D.height, false);
+    }
+
     if (factor === 1.0) {
         canvas.classList.remove('pixel-mode');
+        canvas3D.classList.remove('pixel-mode');
+        uiCanvas.classList.remove('pixel-mode');
     } else {
         canvas.classList.add('pixel-mode');
+        canvas3D.classList.add('pixel-mode');
+        uiCanvas.classList.add('pixel-mode');
     }
 }
 
@@ -233,29 +270,37 @@ function createParticles(x, y, color, count, baseSize = null) {
         });
     }
 }
-// Maus-Bewegung tracken für die Vorschau
-canvas.addEventListener('mousemove', (e) => {
-    const rect = canvas.getBoundingClientRect();
+// Ändere die Ziel-Variable für die Listener:
+// Statt canvas.addEventListener... nutzen wir uiCanvas.addEventListener...
+
+uiCanvas.addEventListener('mousemove', (e) => {
+    const rect = uiCanvas.getBoundingClientRect();
+    // Nutze uiCanvas für die Berechnung des Skalierungsfaktors
     const factor = pixelModes[currentPixelMode].factor;
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = uiCanvas.width / rect.width;
+    const scaleY = uiCanvas.height / rect.height;
 
     mouseX = (e.clientX - rect.left) * scaleX / factor;
     mouseY = (e.clientY - rect.top) * scaleY / factor;
 });
 
-// Klick-Logik
-canvas.addEventListener('mousedown', (e) => {
-    const rect = canvas.getBoundingClientRect();
+
+uiCanvas.addEventListener('mousedown', (e) => {
+    const rect = uiCanvas.getBoundingClientRect();
     const factor = pixelModes[currentPixelMode].factor;
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = uiCanvas.width / rect.width;
+    const scaleY = uiCanvas.height / rect.height;
 
     const clickX = (e.clientX - rect.left) * scaleX / factor;
     const clickY = (e.clientY - rect.top) * scaleY / factor;
 
-    // handleShopClick gibt true zurück, wenn der Klick vom Shop-System "verbraucht" wurde
-    handleShopClick(clickX, clickY);
+    // Der Shop prüft, ob das Plus oder ein Item getroffen wurde
+    const consumed = handleShopClick(clickX, clickY);
+
+    // Wenn der Shop den Klick nicht wollte, können wir ihn an die 2D-Welt weitergeben
+    if (!consumed && !window.is3DMode) {
+        // Logik für Klicks in der 2D Welt (z.B. Tiere füttern)
+    }
 });
 
 function init() {
@@ -1177,7 +1222,24 @@ function update() {
         if (isAlive && e.alive !== false) survivingEntities.push(e);
     });
 
-    entities = [...survivingEntities.filter(ent => ent.alive !== false), ...newEntities];
+    // --- PERFORMANCE FIX: Kein Array-Spamming mehr ---
+    // Wir leeren das entities-Array nicht, sondern überschreiben es in-place
+    let nextIndex = 0;
+
+    // 1. Überlebende übernehmen
+    for (let i = 0; i < survivingEntities.length; i++) {
+        if (survivingEntities[i].alive !== false) {
+            entities[nextIndex++] = survivingEntities[i];
+        }
+    }
+
+    // 2. Neugeborene hinzufügen
+    for (let i = 0; i < newEntities.length; i++) {
+        entities[nextIndex++] = newEntities[i];
+    }
+
+    // 3. Array auf die tatsächliche Länge abschneiden
+    entities.length = nextIndex;
 
     // Krümel bewegen und verblassen lassen
     for (let i = particles.length - 1; i >= 0; i--) {
@@ -1203,7 +1265,13 @@ function animate(timestamp) {
     const t0 = performance.now();
 
     update();
-    draw();
+
+    // ENTSCHEIDUNG: Welche Engine malt?
+    if (window.is3DMode) {
+        if (typeof draw3D === 'function') draw3D();
+    } else {
+        if (typeof draw2D === 'function') draw2D();
+    }
 
     // Stoppuhr stoppen und Zeitdifferenz speichern
     const t1 = performance.now();

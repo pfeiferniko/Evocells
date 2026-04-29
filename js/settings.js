@@ -71,7 +71,7 @@ window.SETTINGS = {
     // ==========================================
     // GENOME & MUTATION
     // ==========================================
-    HERB_MAX_SIZE_BASE: 6,      // Start-Maximalgröße Pflanzenfresser
+    HERB_MAX_SIZE_BASE: 4,      // Start-Maximalgröße Pflanzenfresser
     CARN_MAX_SIZE_BASE: 8,     // Start-Maximalgröße rote Jäger
     SNAKE_MAX_SIZE_BASE: 7,     // Start-Maximalgröße Schlangen
 

@@ -1,4 +1,4 @@
-function draw() {
+function draw2D() {
     const currentTime = Date.now();
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
