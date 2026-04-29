@@ -82,6 +82,10 @@ canvas.pixel-mode {
     z-index: 10;
 }
 
+#canvas3D {
+    background-color: #0a1018; /* Gleiche Farbe wie scene.background */
+}
+
 /* Die HTML-Leiste muss über ALLEN Canvases liegen */
 #controls-bar, #bottom-bar {
     position: absolute;

@@ -36,7 +36,10 @@ const _dummy = new THREE.Object3D();
 
 function init3D() {
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
+
+    // 1. Hintergrund: Fast Schwarz mit einem Hauch von Kühle (0x020406).
+    // Das ist dunkel genug, um absolut keinen Kontrast-Rahmen mehr zu erzeugen.
+    scene.background = new THREE.Color(0x020406);
 
     const aspect = WORLD_WIDTH / WORLD_HEIGHT;
     camera = new THREE.PerspectiveCamera(45, aspect, 1, 10000);
@@ -54,9 +57,11 @@ function init3D() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
-    scene.add(new THREE.AmbientLight(0x405060, 0.3));
+    // 2. Umgebungslicht: Wir bleiben bei 0.5, um die Grundsichtbarkeit zu halten.
+    scene.add(new THREE.AmbientLight(0x405060, 0.4));
 
-    light = new THREE.DirectionalLight(0xe0f0ff, 2.5);
+    // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
+    light = new THREE.DirectionalLight(0xe0f0ff, 2.4);
     light.position.set(WORLD_WIDTH / 2, 600, -1200);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
@@ -78,9 +83,12 @@ function init3D() {
 
     scene.add(light);
 
+    // 4. Bodenplatte: Abgedunkelt auf 0x080a0f.
+    // Das ist deutlich dunkler als 0x121820, bietet aber im Vergleich zum
+    // fast schwarzen Hintergrund (0x020406) immer noch genug Fläche für Schatten.
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
-        new THREE.MeshPhongMaterial({ color: 0x0a0a0c })
+        new THREE.MeshPhongMaterial({ color: 0x080a0f })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
@@ -88,7 +96,7 @@ function init3D() {
     scene.add(floor);
 
     initPlankton3D();
-    initInstancedMeshes(); // <-- NEU
+    initInstancedMeshes();
 }
 
 function initInstancedMeshes() {
