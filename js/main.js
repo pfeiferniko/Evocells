@@ -1,3 +1,5 @@
+window.isDemoMode = false;
+
 const canvas = document.getElementById('simulationCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
@@ -98,6 +100,69 @@ if (fullscreenBtn) {
             }
             fullscreenBtn.innerText = "Vollbild";
             fullscreenBtn.style.background = "rgba(255, 255, 255, 0.15)";
+        }
+    });
+}
+
+const demoBtn = document.getElementById('demo-btn');
+
+if (demoBtn) {
+    demoBtn.innerText = "Demo: AUS";
+    demoBtn.style.color = "#555";
+
+    demoBtn.addEventListener('click', () => {
+        // Fall 1: Demo-Modus wird EINGESCHALTET
+        if (!window.isDemoMode) {
+
+            // --- NEU: VOR dem Wechsel zwingend den aktuellen Spielstand speichern! ---
+            if (entities.length > 0) {
+                saveSimulationState();
+                console.log("Echter Spielstand vor Demo-Start sicher gespeichert.");
+            }
+
+            window.isDemoMode = true;
+
+            // Alles sauber leeren für die Demo
+            entities = [];
+            particles = [];
+            staticGrid.clear();
+            dynamicGrid.clear();
+            startTime = Date.now();
+
+            demoBtn.innerText = "Demo: AN";
+            demoBtn.style.color = "#999";
+
+            // Shop erzwingend schließen
+            if (typeof isShopOpen !== 'undefined') {
+                isShopOpen = false;
+                isPlacementMode = false;
+                pendingItem = null;
+            }
+
+            // Demo-Welt generieren
+            generateInitialWorld();
+
+            // Fall 2: Demo-Modus wird AUSGESCHALTET
+        } else {
+            window.isDemoMode = false;
+
+            // Demo-Entities komplett löschen
+            entities = [];
+            particles = [];
+            staticGrid.clear();
+            dynamicGrid.clear();
+
+            demoBtn.innerText = "Demo: AUS";
+            demoBtn.style.color = "#555";
+
+            // Versuchen, die eben gespeicherte Welt wiederherzustellen
+            if (loadSimulationState()) {
+                console.log("Gespeicherte Welt nach Demo-Modus erfolgreich geladen.");
+            } else {
+                console.log("Kein Spielstand vorhanden. Starte kleine Welt.");
+                startTime = Date.now();
+                generateInitialWorld2();
+            }
         }
     });
 }
@@ -227,19 +292,18 @@ function init() {
         });
     }
 
-    // --- NEU: VERSUCHEN ZU LADEN ---
     if (loadSimulationState()) {
         console.log("State loaded successfully!");
     } else {
         console.log("No valid save state found. Starting fresh.");
-        startTime = Date.now(); // Stoppuhr starten
-        generateInitialWorld();
+        startTime = Date.now();
+        generateInitialWorld2(); // <-- HIER: Die 2 anhängen!
     }
 
     animate();
 }
 
-function generateInitialWorld() {
+function generateInitialWorld2() {
     const stones = [];
 
     // 1. Steine generieren
@@ -279,7 +343,7 @@ function generateInitialWorld() {
     console.log("Entities created:", entities.length);
 }
 
-function generateInitialWorld2() {
+function generateInitialWorld() {
     const stones = [];
 
     // 1. Steine generieren
@@ -333,6 +397,14 @@ function generateInitialWorld2() {
         initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
         initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
         let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
+        entities.push(herbivore);
+        addInitialTail(herbivore, entities);
+    }
+    for (let i = 0; i < 5; i++) {
+        const initialGenome = new Genome();
+        initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
+        initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
+        let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome, true);
         entities.push(herbivore);
         addInitialTail(herbivore, entities);
     }
@@ -507,15 +579,15 @@ function update() {
                         if (e instanceof HerbivoreCell) {
                             child = new HerbivoreCell(childX, childY, newGenome, false);
                             // NEU: Holt sich die Punkte aus den Settings
-                            simScore += window.SETTINGS.SCORE_HERBIVORE_BIRTH;
+                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_HERBIVORE_BIRTH;
                         } else if (e instanceof SnakeCell) {
                             child = new SnakeCell(childX, childY, newGenome);
                             // NEU: Holt sich die Punkte aus den Settings
-                            simScore += window.SETTINGS.SCORE_SNAKE_BIRTH;
+                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_SNAKE_BIRTH;
                         } else {
                             child = new CarnivoreCell(childX, childY, newGenome);
                             // NEU: Holt sich die Punkte aus den Settings
-                            simScore += window.SETTINGS.SCORE_CARNIVORE_BIRTH;
+                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_CARNIVORE_BIRTH;
                         }
 
                         if (child.isGiant) {
@@ -1304,27 +1376,33 @@ function loadSimulationState() {
     return true;
 }
 
-// Auto-Save alle 10 Sekunden
+// Auto-Save alle 10 Sekunden (geändert)
 setInterval(() => {
-    if (!isResetting && entities.length > 0) saveSimulationState();
+    if (!isResetting && !window.isDemoMode && entities.length > 0) saveSimulationState();
 }, 10000);
 
-// Save beim Schließen / Aktualisieren des Tabs
+// Save beim Schließen / Aktualisieren des Tabs (geändert)
 window.addEventListener('beforeunload', () => {
-    if (!isResetting && entities.length > 0) saveSimulationState();
+    if (!isResetting && !window.isDemoMode && entities.length > 0) saveSimulationState();
 });
 
-// Neustart-Button Logik
+// Neustart-Button Logik (geändert)
 const resetBtn = document.getElementById('reset-btn');
 if (resetBtn) {
     resetBtn.addEventListener('click', () => {
-        if(confirm("Simulation wird neu gestartet. Der Punktestand wird übernommen (und bei Bedarf wieder auf 1000 Punkte aufgefüllt).")) {
-            isResetting = true; // <--- WICHTIG: Speichern blockieren!
+        // NEU: Im Demo-Modus das Löschen des Spielstands blockieren
+        if (window.isDemoMode) {
+            alert("Im Demo-Modus kann nicht neu gestartet werden. Bitte beende den Demo-Modus zuerst.");
+            return;
+        }
+
+        if(confirm("Simulation wird neu gestartet. Der Punktestand wird übernommen...")) {
+            isResetting = true;
             localStorage.removeItem('evoSimState');
             if (simScore < 1000) {
                 localStorage.setItem('evoSimScore', 1000);
             }
-            location.reload(); // Seite neu laden (startet mit frischem State)
+            location.reload();
         }
     });
 }

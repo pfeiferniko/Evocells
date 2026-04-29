@@ -242,25 +242,28 @@ function draw() {
     });
 
     // --- NEU: SCORE-ANZEIGE OBEN LINKS ---
-    ctx.save();
+    // Wir zeichnen die Punkte NUR, wenn wir NICHT im Demo-Modus sind
+    if (!window.isDemoMode) {
+        ctx.save();
 
-    ctx.font = 'bold 20px sans-serif';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
+        ctx.font = 'bold 20px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
 
-    const scoreText = `Punkte: ${simScore}`;
+        const scoreText = `Punkte: ${simScore}`;
 
-    // Kasten-Hintergrund dynamisch an die Textbreite anpassen
-    const textWidth = ctx.measureText(scoreText).width;
+        // Kasten-Hintergrund dynamisch an die Textbreite anpassen
+        const textWidth = ctx.measureText(scoreText).width;
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.fillRect(10, 10, textWidth + 30, 40); // Die Box für die Punkte
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+        ctx.fillRect(10, 10, textWidth + 30, 40); // Die Box für die Punkte
 
-    // Schicke Gold/Gelbe Schrift für die Punkte
-    ctx.fillStyle = '#FFD700';
-    ctx.fillText(scoreText, 25, 20);
+        // Schicke Gold/Gelbe Schrift für die Punkte
+        ctx.fillStyle = '#FFD700';
+        ctx.fillText(scoreText, 25, 20);
 
-    ctx.restore();
+        ctx.restore();
+    }
 
     // --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
     if (showFps) {

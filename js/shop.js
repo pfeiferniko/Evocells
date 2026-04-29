@@ -6,8 +6,9 @@ let pendingItem = null;
 
 const SHOP_ITEMS = [
     { id: 'plant', name: 'Pflanze', cost: 5, color: '#2ecc71' },
-    { id: 'stone', name: 'Normaler Stein', cost: 100, color: '#777777' },
-    { id: 'super_stone', name: 'Super Stein', cost: 2000, color: '#ff00ff' },
+    { id: 'super_plant', name: 'Super Pflanze', cost: 20, color: '#8e44ad' }, // <-- NEU
+    { id: 'stone', name: 'Normaler Stein', cost: 50, color: '#777777' },
+    { id: 'super_stone', name: 'Super Stein', cost: 500, color: '#ff00ff' },
     { id: 'herbivore', name: 'Pflanzenfresser', cost: 50, color: '#f1c40f' },
     { id: 'giant', name: 'Riesen-Pflanzenfresser', cost: 250, color: '#e67e22' },
     { id: 'carnivore', name: 'Fleischfresser', cost: 500, color: '#e74c3c' },
@@ -17,6 +18,8 @@ const SHOP_ITEMS = [
 const SHOP_BTN = { x: 0, y: 15, w: 45, h: 45 };
 
 function drawShopUI() {
+    if (window.isDemoMode) return;
+
     SHOP_BTN.x = WORLD_WIDTH - 60;
 
     // 1. Plus-Button
@@ -48,7 +51,7 @@ function drawShopUI() {
 
 function drawShopWindow() {
     const winW = 400;
-    const winH = 520; // Etwas höher für die Steine
+    const winH = 560; // Etwas höher für die Steine
     const winX = (WORLD_WIDTH - winW) / 2;
     const winY = (WORLD_HEIGHT - winH) / 2;
 
@@ -121,6 +124,8 @@ function drawPlacementPreview() {
 }
 
 function handleShopClick(canvasX, canvasY) {
+    if (window.isDemoMode) return false;
+
     // 1. Wenn wir im Platzierungsmodus sind, platziere das Item beim nächsten Klick
     if (isPlacementMode) {
         executePlacement(canvasX, canvasY);
@@ -177,6 +182,11 @@ function executePlacement(x, y) {
     switch(pendingItem.id) {
         case 'plant':
             newEntity = new PlantSegment(x, y, null, false);
+            staticGrid.add(newEntity);
+            break;
+        case 'super_plant': // <-- NEUER BLOCK
+            newEntity = new PlantSegment(x, y, null, true); // true = isSuper
+            newEntity.isTip = true; // Wichtig: Damit sie sofort anfangen kann zu wachsen
             staticGrid.add(newEntity);
             break;
         case 'stone':

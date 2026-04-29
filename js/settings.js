@@ -20,7 +20,7 @@ window.SETTINGS = {
     SPAWN_HERBIVORES: 70, // Startanzahl Pflanzenfresser
     SPAWN_CARNIVORES: 5,  // Startanzahl Fleischfresser
     SPAWN_SNAKES: 1,
-    SPAWN_SUPER_STONES: 1, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
+    SPAWN_SUPER_STONES: 2, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
     SPAWN_NORMAL_STONES: 30, // Anzahl normale Steine
 
     // ==========================================
@@ -123,14 +123,14 @@ window.SETTINGS = {
     HERB_MIN_AGE_REPRO: 300,
     HERB_REPRO_FRAMES: 90,
     HERB_COOLDOWN_REPRO: 600,
-    HERB_METABOLISM_DISCOUNT: 0.6, // Nur 60% des normalen Verbrauchs
+    HERB_METABOLISM_DISCOUNT: 1.2, // Nur 60% des normalen Verbrauchs
     HERB_SIGHT_RANGE_MULTIPLIER: 100,
     HERB_SIGHT_ANGLE: Math.PI * 0.5,
 
     // ==========================================
     // FLEISCHFRESSER (CARNIVORE)
     // ==========================================
-    CARN_BASE_SPEED: 1.4,
+    CARN_BASE_SPEED: 1.3,
     CARN_SPEED_VARIANCE: 0.1, // Wird +/- dazugerechnet (1.2 bis 1.4)
     CARN_MAX_REPRODUCTIONS: 2,
     CARN_ENERGY_REQUIRED_REPRO: 0.9, // 90% der Maximalenergie
@@ -146,7 +146,7 @@ window.SETTINGS = {
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
     SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
-    SNAKE_BASE_SPEED: 1.6,      // Schlangen sind etwas schneller
+    SNAKE_BASE_SPEED: 1.7,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
     SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown
 
