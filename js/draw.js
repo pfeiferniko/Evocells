@@ -24,6 +24,54 @@ function draw2D() {
     // 1. Durchlauf: Hintergrund-Elemente (Sichtfenster, Pflanzen und Schwänze)
     entities.forEach(e => {
 
+        if (e.type === 'diamond') {
+            // Pulsieren
+            const pulse = 1.0 + Math.sin(currentTime * 0.005) * 0.1;
+            const s = e.size * pulse; // s = drawSize
+
+            // Transparenz ausfaden (ohne das teure ctx.save(), wir merken uns einfach den alten Wert)
+            const oldAlpha = ctx.globalAlpha;
+            if (e.life < e.maxLife * 0.3) {
+                ctx.globalAlpha = Math.max(0, e.life / (e.maxLife * 0.3));
+            }
+
+            // --- HIGH PERFORMANCE ROTATION ---
+            // Wir berechnen die Drehung mathematisch, das ist zigfach schneller als ctx.translate!
+            const cosA = Math.cos(e.angle);
+            const sinA = Math.sin(e.angle);
+
+            // Die 4 Eckpunkte des Diamanten (Rhombus) berechnen
+            const topX = e.x + (1.5 * s) * sinA;
+            const topY = e.y - (1.5 * s) * cosA;
+            const rightX = e.x + s * cosA;
+            const rightY = e.y + s * sinA;
+            const botX = e.x - (1.5 * s) * sinA;
+            const botY = e.y + (1.5 * s) * cosA;
+            const leftX = e.x - s * cosA;
+            const leftY = e.y - s * sinA;
+
+            // 1. Grundform zeichnen (ohne shadowBlur!)
+            ctx.fillStyle = e.color;
+            ctx.beginPath();
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(rightX, rightY);
+            ctx.lineTo(botX, botY);
+            ctx.lineTo(leftX, leftY);
+            ctx.closePath();
+            ctx.fill();
+
+            // 2. Glanz-Effekt (Ein einfaches Dreieck oben rechts zur Mitte)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.beginPath();
+            ctx.moveTo(topX, topY);
+            ctx.lineTo(rightX, rightY);
+            ctx.lineTo(e.x, e.y); // Exakt in die Mitte
+            ctx.closePath();
+            ctx.fill();
+
+            // Alpha-Wert wieder auf den Standard zurücksetzen
+            ctx.globalAlpha = oldAlpha;
+        } else
         // Pflanzen, Steine und Schwänze
         if (e.type === 'plant' || e.type === 'tail' || e.type === 'stone') {
 
@@ -294,6 +342,18 @@ function draw2D() {
         ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
         ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
 
+        ctx.restore();
+    }
+
+    // --- NEU: Score-Partikel zeichnen ---
+    if (typeof scoreParticles !== 'undefined') {
+        ctx.save();
+        // Lighter-Blending macht sie strahlend wie kleine LEDs
+        ctx.globalCompositeOperation = 'lighter';
+        scoreParticles.forEach(sp => {
+            ctx.fillStyle = sp.color;
+            ctx.fillRect(sp.x - 3, sp.y - 3, 10, 10);
+        });
         ctx.restore();
     }
 

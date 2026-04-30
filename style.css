@@ -89,7 +89,7 @@ canvas.pixel-mode {
 /* Die HTML-Leiste muss über ALLEN Canvases liegen */
 #controls-bar, #bottom-bar {
     position: absolute;
-    right: 0;
+    center: 0;
     z-index: 100; /* Sehr hoch setzen */
     display: flex;
     gap: 12px; /* Abstand zwischen den Buttons */

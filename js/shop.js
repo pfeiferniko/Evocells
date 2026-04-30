@@ -3,6 +3,7 @@
 let isShopOpen = false;
 let isPlacementMode = false;
 let pendingItem = null;
+let isDeleteMode = false; // Neuer Status für das Löschen
 
 const SHOP_ITEMS = [
     { id: 'plant', name: 'Pflanze', cost: 5, color: '#2ecc71' },
@@ -12,7 +13,8 @@ const SHOP_ITEMS = [
     { id: 'herbivore', name: 'Pflanzenfresser', cost: 50, color: '#f1c40f' },
     { id: 'giant', name: 'Riesen-Pflanzenfresser', cost: 250, color: '#e67e22' },
     { id: 'carnivore', name: 'Fleischfresser', cost: 500, color: '#e74c3c' },
-    { id: 'snake', name: 'Schlange', cost: 1000, color: '#9b59b6' }
+    { id: 'snake', name: 'Schlange', cost: 1000, color: '#9b59b6' },
+    { id: 'delete', name: 'Element löschen', cost: 0, color: '#e74c3c' }
 ];
 
 const SHOP_BTN = { x: 0, y: 15, w: 45, h: 45 };
@@ -22,9 +24,11 @@ function drawShopUI() {
 
     SHOP_BTN.x = WORLD_WIDTH - 60;
 
+    // NEU: Der Button zeigt ein '×', wenn der Shop offen ODER der Baumodus aktiv ist
+    const isCancelState = isShopOpen || isPlacementMode || (typeof isDeleteMode !== 'undefined' && isDeleteMode);
     // 1. Plus-Button
     ctx.save();
-    ctx.fillStyle = isShopOpen ? '#ff5555' : 'rgba(255, 255, 255, 0.2)';
+    ctx.fillStyle = isCancelState ? '#ff5555' : 'rgba(255, 255, 255, 0.2)';
     ctx.strokeStyle = 'white';
     ctx.lineWidth = 2;
     drawRoundedRect(SHOP_BTN.x, SHOP_BTN.y, SHOP_BTN.w, SHOP_BTN.h, 10);
@@ -35,7 +39,7 @@ function drawShopUI() {
     ctx.font = 'bold 30px sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(isShopOpen ? '×' : '+', SHOP_BTN.x + SHOP_BTN.w/2, SHOP_BTN.y + SHOP_BTN.h/2 + 2);
+    ctx.fillText(isCancelState ? '×' : '+', SHOP_BTN.x + SHOP_BTN.w/2, SHOP_BTN.y + SHOP_BTN.h/2 + 2);
     ctx.restore();
 
     // 2. Shop Fenster
@@ -47,53 +51,89 @@ function drawShopUI() {
     if (isPlacementMode && pendingItem) {
         drawPlacementPreview();
     }
+
+    // 4. Lösch-Vorschau (Ghost)
+    if (typeof isDeleteMode !== 'undefined' && isDeleteMode) {
+        drawDeletePreview();
+    }
+}
+
+// Hilfsvariablen für konsistente Maße
+const SHOP_WIN = { w: 400, h: 640 }; // Etwas höher für den zusätzlichen Knopf
+
+function drawDeletePreview() {
+    ctx.save();
+    ctx.strokeStyle = '#e74c3c';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    // Ein rotes Fadenkreuz an der Maus
+    ctx.arc(mouseX, mouseY, 20, 0, Math.PI * 2);
+    ctx.moveTo(mouseX - 25, mouseY);
+    ctx.lineTo(mouseX + 25, mouseY);
+    ctx.moveTo(mouseX, mouseY - 25);
+    ctx.lineTo(mouseX, mouseY + 25);
+    ctx.stroke();
+
+    ctx.fillStyle = 'white';
+    ctx.font = 'bold 12px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText("Löschen aktiv", mouseX, mouseY - 35);
+    ctx.restore();
 }
 
 function drawShopWindow() {
-    const winW = 400;
-    const winH = 560; // Etwas höher für die Steine
-    const winX = (WORLD_WIDTH - winW) / 2;
-    const winY = (WORLD_HEIGHT - winH) / 2;
+    const winX = (WORLD_WIDTH - SHOP_WIN.w) / 2;
+    const winY = (WORLD_HEIGHT - SHOP_WIN.h) / 2;
 
     ctx.save();
+    // Hintergrund abdunkeln
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
     ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
 
+    // Fensterrahmen
     ctx.fillStyle = '#2c3e50';
     ctx.strokeStyle = '#ecf0f1';
     ctx.lineWidth = 3;
-    drawRoundedRect(winX, winY, winW, winH, 20);
+    drawRoundedRect(winX, winY, SHOP_WIN.w, SHOP_WIN.h, 20);
     ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = 'white';
     ctx.font = 'bold 24px sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText('Labor-Shop', winX + winW/2, winY + 40);
+    ctx.fillText('Labor-Shop', winX + SHOP_WIN.w/2, winY + 40);
 
     SHOP_ITEMS.forEach((item, index) => {
-        const itemY = winY + 70 + (index * 60); // Engeres Layout
+        const itemY = winY + 70 + (index * 60);
         const isAffordable = simScore >= item.cost;
 
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+        // --- NEU: HOVER-EFFEKT ---
+        // Wenn die Maus über dem Item ist, leuchtet es leicht auf
+        const isHovered = (mouseX >= winX + 20 && mouseX <= winX + SHOP_WIN.w - 20 &&
+            mouseY >= itemY && mouseY <= itemY + 50);
+
+        ctx.fillStyle = isHovered && isAffordable ? 'rgba(255, 255, 255, 0.25)' : 'rgba(255, 255, 255, 0.1)';
         if (!isAffordable) ctx.globalAlpha = 0.3;
 
-        drawRoundedRect(winX + 20, itemY, winW - 40, 50, 10);
+        drawRoundedRect(winX + 20, itemY, SHOP_WIN.w - 40, 50, 10);
         ctx.fill();
 
+        // Icon/Farbe
         ctx.fillStyle = item.color;
         ctx.beginPath();
         ctx.arc(winX + 50, itemY + 25, 12, 0, Math.PI * 2);
         ctx.fill();
 
+        // Name
         ctx.textAlign = 'left';
-        ctx.fillStyle = 'white';
+        ctx.fillStyle = isHovered && isAffordable ? '#fff' : '#eee';
         ctx.font = '16px sans-serif';
         ctx.fillText(item.name, winX + 80, itemY + 31);
 
+        // Preis
         ctx.textAlign = 'right';
         ctx.fillStyle = isAffordable ? '#f1c40f' : '#e74c3c';
-        ctx.fillText(`${item.cost} Pkt.`, winX + winW - 40, itemY + 31);
+        ctx.fillText(`${item.cost} Pkt.`, winX + SHOP_WIN.w - 40, itemY + 31);
 
         ctx.globalAlpha = 1.0;
     });
@@ -126,40 +166,59 @@ function drawPlacementPreview() {
 function handleShopClick(canvasX, canvasY) {
     if (window.isDemoMode) return false;
 
-    // 1. Wenn wir im Platzierungsmodus sind, platziere das Item beim nächsten Klick
-    if (isPlacementMode) {
-        executePlacement(canvasX, canvasY);
+    // 1. Plus/Abbruch-Button Logik
+    if (canvasX >= SHOP_BTN.x && canvasX <= SHOP_BTN.x + SHOP_BTN.w &&
+        canvasY >= SHOP_BTN.y && canvasY <= SHOP_BTN.y + SHOP_BTN.h) {
+
+        if (isPlacementMode || isDeleteMode) { // Beendet beide Modi
+            isPlacementMode = false;
+            isDeleteMode = false;
+            pendingItem = null;
+        } else {
+            isShopOpen = !isShopOpen;
+        }
         return true;
     }
 
-    // 2. Plus-Button Logik
-    if (canvasX >= SHOP_BTN.x && canvasX <= SHOP_BTN.x + SHOP_BTN.w &&
-        canvasY >= SHOP_BTN.y && canvasY <= SHOP_BTN.y + SHOP_BTN.h) {
-        isShopOpen = !isShopOpen;
+    // 2. Platzierungs-Modus
+    if (isPlacementMode) {
+        if (pendingItem && simScore >= pendingItem.cost) {
+            executePlacement(canvasX, canvasY);
+        } else {
+            isPlacementMode = false;
+            pendingItem = null;
+        }
         return true;
     }
 
     // 3. Item-Kauf Logik
     if (isShopOpen) {
-        const winW = 400;
-        const winH = 520;
-        const winX = (WORLD_WIDTH - winW) / 2;
-        const winY = (WORLD_HEIGHT - winH) / 2;
+        const winX = (WORLD_WIDTH - SHOP_WIN.w) / 2;
+        const winY = (WORLD_HEIGHT - SHOP_WIN.h) / 2;
 
         for (let i = 0; i < SHOP_ITEMS.length; i++) {
             const item = SHOP_ITEMS[i];
             const itemY = winY + 70 + (i * 60);
 
-            if (canvasX >= winX + 20 && canvasX <= winX + winW - 20 &&
+            if (canvasX >= winX + 20 && canvasX <= winX + SHOP_WIN.w - 20 &&
                 canvasY >= itemY && canvasY <= itemY + 50) {
-                if (simScore >= item.cost) {
+
+                if (item.id === 'delete') {
+                    isDeleteMode = true; // Löschmodus aktivieren
+                    isPlacementMode = false;
+                    isShopOpen = false;
+                } else if (simScore >= item.cost) {
+                    isDeleteMode = false;
                     startPlacement(item);
                 }
                 return true;
             }
         }
 
-        if (canvasX < winX || canvasX > winX + winW || canvasY < winY || canvasY > winY + winH) {
+        // Klick außerhalb schließt das Fenster
+        // HIER WURDE SHOP_WIN.h EINGESETZT:
+        if (canvasX < winX || canvasX > winX + SHOP_WIN.w ||
+            canvasY < winY || canvasY > winY + SHOP_WIN.h) {
             isShopOpen = false;
         }
         return true;
@@ -202,7 +261,7 @@ function executePlacement(x, y) {
             initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
             initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
             newEntity = new HerbivoreCell(x, y, initialGenome, false);
-            newEntity.energy = newEntity.maxEnergy;
+            newEntity.energy = newEntity.getMaxEnergy();
             addInitialTail(newEntity, entities);
             break;
         case 'giant':
@@ -212,7 +271,7 @@ function executePlacement(x, y) {
             newEntity = new HerbivoreCell(x, y, initialGenomeG, true);
             newEntity.isGiant = true;
             newEntity.size = 8;
-            newEntity.energy = newEntity.maxEnergy;
+            newEntity.energy = newEntity.getMaxEnergy();
             addInitialTail(newEntity, entities);
             break;
         case 'carnivore':
@@ -221,7 +280,7 @@ function executePlacement(x, y) {
             initialGenomeC.maxSize = window.SETTINGS.CARN_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
             newEntity = new CarnivoreCell(x, y, initialGenomeC);
             newEntity.size = 3;
-            newEntity.energy = newEntity.maxEnergy;
+            newEntity.energy = newEntity.getMaxEnergy();
             addInitialTail(newEntity, entities);
             break;
         case 'snake':
@@ -230,7 +289,7 @@ function executePlacement(x, y) {
             initialGenomeS.maxSize = window.SETTINGS.SNAKE_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
             newEntity = new SnakeCell(x, y, initialGenomeS);
             newEntity.size = 3;
-            newEntity.energy = newEntity.maxEnergy;
+            newEntity.energy = newEntity.getMaxEnergy();
             addInitialTail(newEntity, entities, 8);
             break;
     }
@@ -238,8 +297,8 @@ function executePlacement(x, y) {
     if (newEntity) entities.push(newEntity);
 
     // Modus beenden
-    isPlacementMode = false;
-    pendingItem = null;
+    //isPlacementMode = false;
+    //pendingItem = null;
 }
 
 function drawRoundedRect(x, y, width, height, radius) {

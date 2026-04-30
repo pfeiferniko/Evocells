@@ -208,12 +208,12 @@ class AnimalCell extends BaseCell {
 
         // Wenn der Grace-Timer aktiv ist, darf die Energie nicht unter 0.1 fallen
         // (das Tier stirbt erst, wenn es wirklich vom Räuber aufgegessen wurde)
-        if (this.graceTimer > 0) {
-            this.graceTimer--;
-            if (this.energy <= 0) {
-                this.energy = 0.01;
-            }
-        }
+        // if (this.graceTimer > 0) {
+        //     this.graceTimer--;
+        //     if (this.energy <= 0) {
+        //         this.energy = 0.01;
+        //     }
+        // }
 
         if (!isHerbivore) {
             this.handleWaypoints(staticGrid);
@@ -260,8 +260,9 @@ class AnimalCell extends BaseCell {
 
                 const isStone = entity.type === 'stone';
                 const isPlant = entity.type === 'plant';
+                const isDiamond = entity.type === 'diamond'; // <-- NEU
 
-                if (isStone || isPlant) {
+                if (isStone || isPlant || isDiamond) {
                     const dx = this.x - entity.x;
                     const dy = this.y - entity.y;
                     const distSq = dx * dx + dy * dy;

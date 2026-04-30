@@ -134,6 +134,28 @@ class StoneCell extends BaseCell {
     }
 }
 
+class DiamondCell extends BaseCell {
+    constructor(x, y, size, points, color) {
+        super(x, y, null);
+        this.type = 'diamond';
+        this.size = size;
+        this.points = points;
+        this.color = color;
+        this.maxLife = window.SETTINGS.DIAMOND_LIFETIME || 600;
+        this.life = this.maxLife;
+        this.angle = 0; // Für die Rotations-Animation
+    }
+
+    update() {
+        this.life--;
+        this.angle += 0.03; // Dreht sich elegant
+
+        if (this.life <= 0) {
+            this.alive = false;
+        }
+    }
+}
+
 class TailSegment extends BaseCell {
     // NEU: 'branch' statt 'sideOffset'
     constructor(x, y, parent, size, branch = 0, depth = 1) {

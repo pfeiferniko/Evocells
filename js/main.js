@@ -33,6 +33,7 @@ const planktons = [];
 
 // --- PARTIKEL-SYSTEM (Fress-Krümel) ---
 let particles = [];
+let scoreParticles = []; // <--- NEU: Schwarm-Partikel für die Punkte
 
 // --- DEBUG-LINIEN LOGIK ---
 let showDebugLines = false;
@@ -297,9 +298,103 @@ uiCanvas.addEventListener('mousedown', (e) => {
     // Der Shop prüft, ob das Plus oder ein Item getroffen wurde
     const consumed = handleShopClick(clickX, clickY);
 
-    // Wenn der Shop den Klick nicht wollte, können wir ihn an die 2D-Welt weitergeben
-    if (!consumed && !window.is3DMode) {
-        // Logik für Klicks in der 2D Welt (z.B. Tiere füttern)
+    if (!consumed) {
+
+        // --- NEU: LÖSCH-MODUS LOGIK ---
+        if (typeof isDeleteMode !== 'undefined' && isDeleteMode) {
+            // Wir suchen das nächste Element im Umkreis des Klicks
+            let target = null;
+            let minDist = 30; // Toleranz-Radius für das Treffen kleiner Objekte
+
+            for (let i = 0; i < entities.length; i++) {
+                const ent = entities[i];
+                // Wir löschen nur Köpfe, Pflanzen und Steine (Schwänze verschwinden mit dem Tier)
+                if (ent.type === 'animal' || ent.type === 'plant' || ent.type === 'stone') {
+                    const dx = ent.x - clickX;
+                    const dy = ent.y - clickY;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < (ent.size || 5) + 15 && dist < minDist) {
+                        target = ent;
+                        minDist = dist;
+                    }
+                }
+            }
+
+            if (target) {
+                // Aus den Grids entfernen
+                if (target.type === 'plant' || target.type === 'stone') {
+                    staticGrid.remove(target);
+                }
+
+                // Tier und Schwanz markieren
+                target.alive = false;
+                if (target.tailSegments) {
+                    target.tailSegments.forEach(t => t.alive = false);
+                }
+
+                // Effekt beim Löschen
+                createParticles(target.x, target.y, '#ffffff', 10, 2);
+            }
+            return; // Klick ist verarbeitet
+        }
+
+        // --- NEU: Diamanten einsammeln ---
+        // Wir nutzen eine großzügige Hitbox, damit das auch im 3D Modus (trotz Perspektive) gut klickbar ist!
+        for (let i = 0; i < entities.length; i++) {
+            const ent = entities[i];
+            if (ent.type === 'diamond' && ent.alive) {
+                const dx = ent.x - clickX;
+                const dy = ent.y - clickY;
+
+                // Radius + 25 Pixel Toleranz
+                const hitRadius = ent.size + 25;
+
+                if (dx * dx + dy * dy < hitRadius * hitRadius) {
+                    simScore += ent.points;
+                    ent.alive = false;
+                    staticGrid.remove(ent);
+
+                    // --- NEU: Punkte-Partikel Perlenkette ---
+                    if (typeof scoreParticles !== 'undefined') {
+                        const pCount = Math.min(ent.points, 1000);
+
+                        const targetX = 50;
+                        const targetY = 30;
+
+                        const ctrlX = ent.x + (targetX - ent.x) * 0.4;
+                        const ctrlY = Math.min(ent.y, targetY) - 20;
+
+                        // --- DYNAMISCHES DELAY ---
+                        // Wir wollen, dass der letzte Punkt spätestens nach ~90 Frames (1,5 Sek) startet.
+                        let delayStep = 70 / pCount;
+
+                        // Bei extrem wenig Punkten (z.B. 2 Stück) wäre der Abstand sonst 45 Frames.
+                        // Damit das nicht ruckelig wirkt, begrenzen wir den maximalen Abstand auf 15.
+                        if (delayStep > 15) delayStep = 15;
+
+                        for (let i = 0; i < pCount; i++) {
+                            scoreParticles.push({
+                                startX: ent.x,
+                                startY: ent.y,
+                                ctrlX: ctrlX,
+                                ctrlY: ctrlY,
+                                targetX: targetX,
+                                targetY: targetY,
+                                color: ent.color || '#f1c40f',
+
+                                progress: 0,
+                                speed: 0.002,
+                                // Das Delay passt sich jetzt automatisch der Menge an!
+                                delay: Math.floor(i * delayStep)
+                            });
+                        }
+                    }
+
+                    break; // Immer nur 1 Diamant pro Klick
+                }
+            }
+        }
     }
 });
 
@@ -623,16 +718,10 @@ function update() {
 
                         if (e instanceof HerbivoreCell) {
                             child = new HerbivoreCell(childX, childY, newGenome, false);
-                            // NEU: Holt sich die Punkte aus den Settings
-                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_HERBIVORE_BIRTH;
                         } else if (e instanceof SnakeCell) {
                             child = new SnakeCell(childX, childY, newGenome);
-                            // NEU: Holt sich die Punkte aus den Settings
-                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_SNAKE_BIRTH;
                         } else {
                             child = new CarnivoreCell(childX, childY, newGenome);
-                            // NEU: Holt sich die Punkte aus den Settings
-                            if (!window.isDemoMode)simScore += window.SETTINGS.SCORE_CARNIVORE_BIRTH;
                         }
 
                         if (child.isGiant) {
@@ -774,41 +863,39 @@ function update() {
                         // Carnivore isst Carnivore (Kannibalismus)
                         else if (e instanceof CarnivoreCell && other instanceof CarnivoreCell) {
                             if (e.target === other) {
+
+                                // Starker, fairer Schaden
                                 other.energy -= 1;
                                 other.speedMultiplier = Math.max(0.1, other.speedMultiplier - 0.15);
-                                other.graceTimer = 60;
 
-                                // --- NEU: NOTWEHR (Berserker-Modus) ---
-                                // Sobald das Tier gebissen wird, wehrt es sich!
-                                other.target = e;               // Nimm den Angreifer ins Visier
-                                other.threat = null;            // Vergiss die Flucht
-                                other.currentFleeTarget = null; // Zielpunkt der Flucht löschen
-                                other.berserkTimer = 60;        // Für 60 Frames (ca. 1 Sekunde) unterdrückt dies den Fluchtinstinkt
-
-                                // --- NEU: Ruckartige Drehung zum Angreifer! ---
+                                // Notwehr (Berserker-Modus)
+                                other.target = e;
+                                other.threat = null;
+                                other.currentFleeTarget = null;
+                                other.berserkTimer = 60;
                                 other.angle = Math.atan2(e.y - other.y, e.x - other.x);
 
-                                // --- Dynamische Krümelgröße beim Knabbern ---
                                 if (Math.random() < 0.4) {
                                     const pCount = Math.max(1, Math.floor(other.size * 0.3));
                                     const pSize = Math.max(2, other.size * 0.3);
                                     createParticles(other.x, other.y, other.color, pCount, pSize);
                                 }
 
-                                e.energy += 0.01;
                                 e.stuckTimer = 0;
                                 e.accumulatedDist = 0;
 
-                                // Wenn das Tier durch den Biss stirbt
+                                // --- HIER IST DER FIX: e.energy > 0 wurde entfernt! ---
                                 if (other.energy <= 0) {
                                     other.isEaten = true;
                                     other.alive = false;
                                     if (other.tailSegments) other.tailSegments.forEach(t => t.alive = false);
 
-                                    const energyGain = other.size;
-                                    e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
-
-                                    if (e.size < e.maxSize) e.size += 0.15;
+                                    // Der Sieger heilt sich nur, wenn er den K.O.-Schlag überlebt hat
+                                    if (e.energy > 0) {
+                                        const energyGain = other.size;
+                                        e.energy = Math.min(e.getMaxEnergy(), e.energy + energyGain);
+                                        if (e.size < e.maxSize) e.size += 0.15;
+                                    }
 
                                     const finalPuffCount = Math.floor(other.size * 2);
                                     const finalPuffSize = other.size * 0.4;
@@ -922,7 +1009,7 @@ function update() {
                         if (other.type === 'stone') {
                             // Steine sind massiv: Das Tier (e) nimmt den vollen Rückstoß
                             moveE = overlap;
-                        } else if (other.type === 'plant') {
+                        } else if (other.type === 'plant' || other.type === 'diamond') {
                             if (e instanceof CarnivoreCell) {
                                 // Fleischfresser: Schieben Pflanzen weg, werden dabei gebremst
                                 moveOther = overlap * 0.5;
@@ -966,7 +1053,7 @@ function update() {
 
 
             // Energy consumption & instant death
-            if (e.energy <= 0) {
+            if (e.energy <= 0 || e.isEaten) {
 
                 /// 1. Der Kopf zerfällt in Partikel
                 const headPuffCount = Math.floor(e.size * 4);
@@ -987,6 +1074,26 @@ function update() {
                         t.alive = false;
                     });
                 }
+
+                // --- NEU: Diamant droppen, wenn es ein friedlicher Tod im Alter war ---
+                if (!window.isDemoMode && !e.isEaten && e.reproductionCount >= e.maxReproductions) {
+                    let dPoints, dColor,  dSize = 15; // Basis: Herbivore
+
+                    dColor = e.color;
+
+                    if (e instanceof SnakeCell) {
+                        dPoints = window.SETTINGS.SCORE_SNAKE_BIRTH;
+                    } else if (e instanceof CarnivoreCell) {
+                        dPoints = window.SETTINGS.SCORE_CARNIVORE_BIRTH;
+                    } else {
+                        dPoints = window.SETTINGS.SCORE_HERBIVORE_BIRTH;
+                    }
+
+                    const diamond = new DiamondCell(e.x, e.y, dSize, dPoints, dColor);
+                    newEntities.push(diamond);
+                    staticGrid.add(diamond);
+                }
+
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
                /* if (!e.isEaten && e.reproductionCount < e.maxReproductions) { // && Math.random() > 0.7
@@ -1197,6 +1304,14 @@ function update() {
             }
         }
 
+        if (e.type === 'diamond') {
+            e.update();
+            if (!e.alive) {
+                // Wenn er abgelaufen ist, lautlos aus dem Grid entfernen
+                staticGrid.remove(e);
+            }
+        }
+
         // --- NEUE RAND-LOGIK ---
         // Puffer ist die Größe des Objekts, damit es immer komplett im Bild bleibt.
         // Bei Pflanzen/Steinen nehmen wir e.size, falls definiert, sonst einen Standardwert.
@@ -1255,6 +1370,37 @@ function update() {
         // Wenn sie unsichtbar sind, löschen wir sie aus dem Array
         if (p.life <= 0) {
             particles.splice(i, 1);
+        }
+    }
+
+    // --- NEU: Score-Partikel auf Bezier-Kurve updaten ---
+    if (typeof scoreParticles !== 'undefined') {
+        for (let i = scoreParticles.length - 1; i >= 0; i--) {
+            let sp = scoreParticles[i];
+
+            if (sp.delay > 0) {
+                // Das Partikel wartet noch auf seinen Start (es sitzt leuchtend auf der Ursprungsposition)
+                sp.delay--;
+                sp.x = sp.startX;
+                sp.y = sp.startY;
+            } else {
+                // --- NEU: BESCHLEUNIGUNG (Ease-In) ---
+                sp.speed *= 1.08; // Wird JEDEN Frame 8% schneller!
+                sp.progress += sp.speed;
+
+                if (sp.progress >= 1.0) {
+                    // Am Ziel angekommen
+                    scoreParticles.splice(i, 1);
+                    continue;
+                }
+
+                // Hochperformante Bezier-Mathematik (Bleibt exakt gleich!)
+                const t = sp.progress;
+                const invT = 1 - t;
+
+                sp.x = invT * invT * sp.startX + 2 * invT * t * sp.ctrlX + t * t * sp.targetX;
+                sp.y = invT * invT * sp.startY + 2 * invT * t * sp.ctrlY + t * t * sp.targetY;
+            }
         }
     }
 }
@@ -1336,6 +1482,11 @@ function saveSimulationState() {
             data.isTip = e.isTip;
             data.generation = e.generation || 0; // <--- NEU
             data.parentId = e.parent ? e.parent._saveId : null;
+        } else if (e.type === 'diamond') {
+            data.points = e.points;
+            data.life = e.life;
+            data.maxLife = e.maxLife;
+            data.angle = e.angle;
         } else if (e.type === 'tail') {
             data.branch = e.branch;
             data.depth = e.depth;
@@ -1396,6 +1547,11 @@ function loadSimulationState() {
         } else if (data.className === 'TailSegment') {
             e = new TailSegment(data.x, data.y, null, data.size, data.branch, data.depth);
             e.spineX = data.spineX; e.spineY = data.spineY; e.color = data.color; e.dotColor = data.dotColor;
+        } else if (data.className === 'DiamondCell') {
+            e = new DiamondCell(data.x, data.y, data.size, data.points, data.color);
+            e.life = data.life;
+            e.maxLife = data.maxLife;
+            e.angle = data.angle;
         } else if (['HerbivoreCell', 'CarnivoreCell', 'SnakeCell'].includes(data.className)) {
             let gen = new Genome(data.genome);
             if (data.className === 'HerbivoreCell') e = new HerbivoreCell(data.x, data.y, gen, false);

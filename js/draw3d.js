@@ -11,6 +11,9 @@ const MAX_PARTICLES = 3000;
 const MAX_PLANTS = 2000;
 const MAX_STONES = 500;
 
+const MAX_DIAMONDS = 300;
+let diamondsInstancedMesh;
+
 let particlesInstancedMesh;
 let plantsInstancedMesh;
 let stonesInstancedMesh;
@@ -26,6 +29,8 @@ const SHARED_GEOMETRIES = {
     plant: new THREE.IcosahedronGeometry(12, 1),
     stone: new THREE.DodecahedronGeometry(15, 0),
     tail: new THREE.SphereGeometry(10, 5, 5),
+    // Bei SHARED_GEOMETRIES:
+    diamond: new THREE.OctahedronGeometry(12, 0), // Oktaeder ist die perfekte Diamantform!
     particle: new THREE.BoxGeometry(1, 1, 1)
 };
 
@@ -58,10 +63,10 @@ function init3D() {
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     // 2. Umgebungslicht: Wir bleiben bei 0.5, um die Grundsichtbarkeit zu halten.
-    scene.add(new THREE.AmbientLight(0x405060, 0.4));
+    scene.add(new THREE.AmbientLight(0x405060, 0.2));
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
-    light = new THREE.DirectionalLight(0xe0f0ff, 2.4);
+    light = new THREE.DirectionalLight(0xe0f0ff, 1.8);
     light.position.set(WORLD_WIDTH / 2, 1000, -1200);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
@@ -120,6 +125,13 @@ function initInstancedMeshes() {
     stonesInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     stonesInstancedMesh.castShadow = true;
     scene.add(stonesInstancedMesh);
+
+    // Diamanten
+    const diamondMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 100, flatShading: true });
+    diamondsInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.diamond, diamondMat, MAX_DIAMONDS);
+    diamondsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    diamondsInstancedMesh.castShadow = true;
+    scene.add(diamondsInstancedMesh);
 }
 
 function initPlankton3D() {
@@ -212,6 +224,7 @@ function syncEntities() {
     const currentEntityIds = new Set();
     let plantCount = 0;
     let stoneCount = 0;
+    let diamondCount = 0;
 
     entities.forEach(e => {
         if (!e.alive) return;
@@ -246,6 +259,28 @@ function syncEntities() {
                 stonesInstancedMesh.setColorAt(stoneCount, _tempColor);
 
                 stoneCount++;
+            }
+        } else if (e.type === 'diamond') {
+            if (diamondCount < MAX_DIAMONDS) {
+                // Schrumpft, wenn die Zeit abläuft
+                const shrink = e.life < e.maxLife * 0.3 ? Math.max(0.01, e.life / (e.maxLife * 0.3)) : 1.0;
+                const pulse = 1.0 + Math.sin(Date.now() * 0.005) * 0.1;
+                const s = (e.size / 10) * pulse * shrink;
+
+                // Eleganter Schwebe-Effekt (auf und ab)
+                const hoverY = -2 + Math.sin(Date.now() * 0.003 + e.x) * 3;
+
+                _dummy.position.set(e.x, hoverY, e.y);
+                _dummy.scale.set(s, s, s);
+                _dummy.rotation.set(0, e.angle, 0);
+                _dummy.updateMatrix();
+
+                diamondsInstancedMesh.setMatrixAt(diamondCount, _dummy.matrix);
+
+                _tempColor.set(e.color);
+                diamondsInstancedMesh.setColorAt(diamondCount, _tempColor);
+
+                diamondCount++;
             }
         } else {
             // --- TIERE UND SCHWÄNZE (Object Pooling) ---
@@ -291,6 +326,10 @@ function syncEntities() {
     stonesInstancedMesh.count = stoneCount;
     stonesInstancedMesh.instanceMatrix.needsUpdate = true;
     if (stonesInstancedMesh.instanceColor) stonesInstancedMesh.instanceColor.needsUpdate = true;
+
+    diamondsInstancedMesh.count = diamondCount;
+    diamondsInstancedMesh.instanceMatrix.needsUpdate = true;
+    if (diamondsInstancedMesh.instanceColor) diamondsInstancedMesh.instanceColor.needsUpdate = true;
 
     // Tote Tiere und Schwänze in den Pool räumen
     for (let [e, mesh] of entityMeshes) {
@@ -425,6 +464,18 @@ function drawUIOverlay() {
         window.ctx = uiCtx;
 
         drawScoreAndPerformance(uiCtx);
+
+        // --- NEU: Score-Partikel im 3D-Modus ---
+        if (typeof scoreParticles !== 'undefined') {
+            uiCtx.save();
+            uiCtx.globalCompositeOperation = 'lighter';
+            scoreParticles.forEach(sp => {
+                uiCtx.fillStyle = sp.color;
+                uiCtx.fillRect(sp.x - 3, sp.y - 3, 10, 10);
+            });
+            uiCtx.restore();
+        }
+
         if (typeof drawShopUI === 'function') drawShopUI();
 
         window.ctx = originalCtx;
