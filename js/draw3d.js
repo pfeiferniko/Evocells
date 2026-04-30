@@ -62,7 +62,7 @@ function init3D() {
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
     light = new THREE.DirectionalLight(0xe0f0ff, 2.4);
-    light.position.set(WORLD_WIDTH / 2, 600, -1200);
+    light.position.set(WORLD_WIDTH / 2, 1000, -1200);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
 
@@ -88,7 +88,7 @@ function init3D() {
     // fast schwarzen Hintergrund (0x020406) immer noch genug Fläche für Schatten.
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
-        new THREE.MeshPhongMaterial({ color: 0x080a0f })
+        new THREE.MeshPhongMaterial({ color: 0x0202030 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
@@ -180,7 +180,7 @@ function updatePlanktonPositions() {
         _dummy.rotation.set(currentTime * 0.001 + i, currentTime * 0.0012, 0);
 
         // Skalierung basierend auf der individuellen Plankton-Größe
-        const s = p.size * 0.8;
+        const s = p.size * 1.2;
         _dummy.scale.set(s, s, s);
 
         _dummy.updateMatrix();
@@ -347,7 +347,7 @@ function syncParticles() {
         // Da InstancedMesh kein p.life für Opacity kann, skalieren wir den Krümel
         // abhängig von seiner Lebenszeit. Er schrumpft weg!
         const lifeFactor = Math.max(0, p.life);
-        const s = (p.size * 0.8) * lifeFactor;
+        const s = (p.size) * lifeFactor;
 
         _dummy.scale.set(s, s, s);
         _dummy.rotation.set(0, 0, 0);
