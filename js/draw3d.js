@@ -14,6 +14,8 @@ const MAX_STONES = 500;
 const MAX_DIAMONDS = 300;
 let diamondsInstancedMesh;
 
+let lastRenderedStoneCount = -1;
+
 let particlesInstancedMesh;
 let plantsInstancedMesh;
 let stonesInstancedMesh;
@@ -50,7 +52,7 @@ function init3D() {
     camera = new THREE.PerspectiveCamera(45, aspect, 1, 10000);
 
     const maxDimension = Math.max(WORLD_WIDTH, WORLD_HEIGHT);
-    const camHeight = (WORLD_HEIGHT > WORLD_WIDTH) ? maxDimension * 1.2 : maxDimension * 0.6;
+    const camHeight = (WORLD_HEIGHT > WORLD_WIDTH) ? maxDimension * 1.22 : maxDimension * 0.61;
 
     camera.position.set(WORLD_WIDTH / 2, camHeight, WORLD_HEIGHT / 2);
     camera.up.set(0, 0, -1);
@@ -63,11 +65,11 @@ function init3D() {
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
     // 2. Umgebungslicht: Wir bleiben bei 0.5, um die Grundsichtbarkeit zu halten.
-    scene.add(new THREE.AmbientLight(0x405060, 0.2));
+    scene.add(new THREE.AmbientLight(0x405060, 0.4));
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
-    light = new THREE.DirectionalLight(0xe0f0ff, 1.8);
-    light.position.set(WORLD_WIDTH / 2, 1000, -1200);
+    light = new THREE.DirectionalLight(0xe0f0ff, 2);
+    light.position.set(WORLD_WIDTH / 2, 200, -500);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
 
@@ -93,12 +95,38 @@ function init3D() {
     // fast schwarzen Hintergrund (0x020406) immer noch genug Fläche für Schatten.
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
-        new THREE.MeshPhongMaterial({ color: 0x0202030 })
+        new THREE.MeshPhongMaterial({ color: 0x0303040 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
     floor.receiveShadow = true;
     scene.add(floor);
+
+    // --- NEU: AQUARIUM-KANTEN ---
+    // Wie hoch das Aquarium-Glas sein soll (400 wirkt bei 2000er Breite sehr gut)
+    const aquariumHeight = 50;
+
+    // Wir bauen einen unsichtbaren Kasten in Welt-Größe
+    const boxGeo = new THREE.BoxGeometry(WORLD_WIDTH, aquariumHeight, WORLD_HEIGHT);
+
+    // EdgesGeometry filtert die Geometrie und behält NUR die äußeren Kanten (keine Diagonalen!)
+    const edgesGeo = new THREE.EdgesGeometry(boxGeo);
+
+    // Ein Material für die Linien
+    const edgesMat = new THREE.LineBasicMaterial({
+        color: 0x1a4496, // Das gleiche Cyan/Blaugrün wie dein Plankton
+        transparent: true,
+        opacity: 0.7     // Halbtransparent für einen echten Glas-Look
+    });
+
+    const aquarium = new THREE.LineSegments(edgesGeo, edgesMat);
+
+    // Positionieren: X und Z in die Mitte der Welt.
+    // Y wird so gesetzt, dass die untere Kante exakt auf der Bodenplatte (-15) aufliegt.
+    aquarium.position.set(WORLD_WIDTH / 2, (aquariumHeight / 2) - 15, WORLD_HEIGHT / 2);
+
+    scene.add(aquarium);
+    // ----------------------------
 
     initPlankton3D();
     initInstancedMeshes();
@@ -246,18 +274,8 @@ function syncEntities() {
                 plantCount++;
             }
         } else if (e.type === 'stone') {
+            // Steine werden nur gezählt, Matrix-Updates machen wir unten!
             if (stoneCount < MAX_STONES) {
-                const s = e.size / 15;
-
-                _dummy.position.set(e.x, 0, e.y);
-                _dummy.scale.set(s, s, s);
-                _dummy.rotation.set(0, 0, 0);
-                _dummy.updateMatrix();
-
-                stonesInstancedMesh.setMatrixAt(stoneCount, _dummy.matrix);
-                _tempColor.set(e.color || '#444444');
-                stonesInstancedMesh.setColorAt(stoneCount, _tempColor);
-
                 stoneCount++;
             }
         } else if (e.type === 'diamond') {
@@ -318,14 +336,36 @@ function syncEntities() {
         }
     });
 
+
     // Update Arrays an die Grafikkarte schicken
     plantsInstancedMesh.count = plantCount;
     plantsInstancedMesh.instanceMatrix.needsUpdate = true;
     if (plantsInstancedMesh.instanceColor) plantsInstancedMesh.instanceColor.needsUpdate = true;
 
-    stonesInstancedMesh.count = stoneCount;
-    stonesInstancedMesh.instanceMatrix.needsUpdate = true;
-    if (stonesInstancedMesh.instanceColor) stonesInstancedMesh.instanceColor.needsUpdate = true;
+    // --- NEU: Steine nur an die GPU schicken, wenn sich die Anzahl ändert! ---
+    if (stoneCount !== lastRenderedStoneCount) {
+        let currentStoneIndex = 0;
+        entities.forEach(e => {
+            if (e.alive && e.type === 'stone' && currentStoneIndex < MAX_STONES) {
+                const s = e.size / 15;
+                _dummy.position.set(e.x, 0, e.y);
+                _dummy.scale.set(s, s, s);
+                _dummy.rotation.set(0, 0, 0);
+                _dummy.updateMatrix();
+
+                stonesInstancedMesh.setMatrixAt(currentStoneIndex, _dummy.matrix);
+                _tempColor.set(e.color || '#444444');
+                stonesInstancedMesh.setColorAt(currentStoneIndex, _tempColor);
+                currentStoneIndex++;
+            }
+        });
+
+        stonesInstancedMesh.count = currentStoneIndex;
+        stonesInstancedMesh.instanceMatrix.needsUpdate = true;
+        if (stonesInstancedMesh.instanceColor) stonesInstancedMesh.instanceColor.needsUpdate = true;
+
+        lastRenderedStoneCount = stoneCount; // Merken, dass wir aktuell sind!
+    }
 
     diamondsInstancedMesh.count = diamondCount;
     diamondsInstancedMesh.instanceMatrix.needsUpdate = true;
@@ -470,8 +510,10 @@ function drawUIOverlay() {
             uiCtx.save();
             uiCtx.globalCompositeOperation = 'lighter';
             scoreParticles.forEach(sp => {
-                uiCtx.fillStyle = sp.color;
-                uiCtx.fillRect(sp.x - 3, sp.y - 3, 10, 10);
+                if (sp.delay <= 0) {
+                    uiCtx.fillStyle = sp.color;
+                    uiCtx.fillRect(sp.x - 3, sp.y - 3, 6, 6);
+                }
             });
             uiCtx.restore();
         }
@@ -483,10 +525,50 @@ function drawUIOverlay() {
 }
 
 function drawScoreAndPerformance(c) {
-    if (window.isDemoMode) return;
-    c.save();
-    c.font = 'bold 24px sans-serif';
-    c.fillStyle = '#FFD700';
-    c.fillText(`Punkte: ${simScore}`, 30, 50);
-    c.restore();
+    if (!window.isDemoMode) {
+        c.save();
+
+        // --- Dynamische Schriftgröße für den Score (wie zuvor eingebaut) ---
+        const currentFontSize = 24 + ((window.scorePulse || 0) * 10);
+        c.font = `bold ${currentFontSize}px sans-serif`;
+
+        c.fillStyle = '#FFD700';
+
+        const textY = 50 - ((window.scorePulse || 0) * 5);
+        c.fillText(`Punkte: ${simScore}`, 30, textY);
+
+        c.restore();
+    }
+
+    // --- NEU: FPS- und Performance-Overlay für den 3D-Modus ---
+    if (typeof showFps !== 'undefined' && showFps) {
+        c.save();
+
+        c.font = '16px sans-serif';
+        c.textAlign = 'left';
+        c.textBaseline = 'top';
+
+        // Wir nutzen window.WORLD_HEIGHT, da wir auf dem UI-Canvas zeichnen
+        const boxHeight = 135;
+        const startY = window.WORLD_HEIGHT - boxHeight - 10;
+
+        c.fillStyle = 'rgba(0, 0, 0, 0.5)';
+        c.fillRect(10, startY, 220, boxHeight);
+
+        c.fillStyle = 'white';
+
+        // Alle Infos sauber untereinander, exakt wie im 2D-Modus
+        c.fillText(`FPS: ${currentFps}`, 20, startY + 10);
+        c.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
+        c.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
+
+        // Die neuen Zähler
+        c.fillStyle = '#f1c40f'; // Leicht gelblich für Pflanzenfresser
+        c.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
+
+        c.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
+        c.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
+
+        c.restore();
+    }
 }

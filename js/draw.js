@@ -27,13 +27,13 @@ function draw2D() {
         if (e.type === 'diamond') {
             // Pulsieren
             const pulse = 1.0 + Math.sin(currentTime * 0.005) * 0.1;
-            const s = e.size * pulse; // s = drawSize
 
-            // Transparenz ausfaden (ohne das teure ctx.save(), wir merken uns einfach den alten Wert)
-            const oldAlpha = ctx.globalAlpha;
+            // --- NEU: Schrumpfen statt Transparenz am Ende ---
+            let shrink = 1.0;
             if (e.life < e.maxLife * 0.3) {
-                ctx.globalAlpha = Math.max(0, e.life / (e.maxLife * 0.3));
+                shrink = Math.max(0, e.life / (e.maxLife * 0.3));
             }
+            const s = e.size * pulse * shrink; // s = drawSize (wird zum Ende hin winzig)
 
             // --- HIGH PERFORMANCE ROTATION ---
             // Wir berechnen die Drehung mathematisch, das ist zigfach schneller als ctx.translate!
@@ -41,12 +41,12 @@ function draw2D() {
             const sinA = Math.sin(e.angle);
 
             // Die 4 Eckpunkte des Diamanten (Rhombus) berechnen
-            const topX = e.x + (1.5 * s) * sinA;
-            const topY = e.y - (1.5 * s) * cosA;
+            const topX = e.x + (1 * s) * sinA;
+            const topY = e.y - (1 * s) * cosA;
             const rightX = e.x + s * cosA;
             const rightY = e.y + s * sinA;
-            const botX = e.x - (1.5 * s) * sinA;
-            const botY = e.y + (1.5 * s) * cosA;
+            const botX = e.x - (1 * s) * sinA;
+            const botY = e.y + (1 * s) * cosA;
             const leftX = e.x - s * cosA;
             const leftY = e.y - s * sinA;
 
@@ -70,7 +70,7 @@ function draw2D() {
             ctx.fill();
 
             // Alpha-Wert wieder auf den Standard zurücksetzen
-            ctx.globalAlpha = oldAlpha;
+            //ctx.globalAlpha = oldAlpha;
         } else
         // Pflanzen, Steine und Schwänze
         if (e.type === 'plant' || e.type === 'tail' || e.type === 'stone') {
@@ -289,22 +289,30 @@ function draw2D() {
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-    // --- NEU: SCORE-ANZEIGE OBEN LINKS ---
-    // Wir zeichnen die Punkte NUR, wenn wir NICHT im Demo-Modus sind
     if (!window.isDemoMode) {
         ctx.save();
 
-        ctx.font = 'bold 20px sans-serif';
+        // --- NEU: Dynamische Schriftgröße ---
+        // Basis-Größe ist 20. Wenn ein Punkt ankommt, ploppt es auf 28 hoch (+8).
+        const currentFontSize = 20 + (window.scorePulse * 8);
+        ctx.font = `bold ${currentFontSize}px sans-serif`;
+
         ctx.textAlign = 'left';
         ctx.textBaseline = 'top';
 
         const scoreText = `Punkte: ${simScore}`;
 
-        // Kasten-Hintergrund dynamisch an die Textbreite anpassen
-        const textWidth = ctx.measureText(scoreText).width;
+        // --- NEU: Textbreite cachen! ---
+        if (window.cachedScore !== simScore) {
+            window.cachedTextWidth = ctx.measureText(scoreText).width;
+            window.cachedScore = simScore;
+        }
+
+        const boxHeight = 40 + ((window.scorePulse || 0) * 4);
 
         ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        ctx.fillRect(10, 10, textWidth + 30, 40); // Die Box für die Punkte
+        // Jetzt nutzen wir den zwischengespeicherten Wert!
+        ctx.fillRect(10, 10, window.cachedTextWidth + 30, boxHeight);
 
         // Schicke Gold/Gelbe Schrift für die Punkte
         ctx.fillStyle = '#FFD700';
@@ -351,8 +359,10 @@ function draw2D() {
         // Lighter-Blending macht sie strahlend wie kleine LEDs
         ctx.globalCompositeOperation = 'lighter';
         scoreParticles.forEach(sp => {
-            ctx.fillStyle = sp.color;
-            ctx.fillRect(sp.x - 3, sp.y - 3, 10, 10);
+            if (sp.delay <= 0) {
+                ctx.fillStyle = sp.color;
+                ctx.fillRect(sp.x - 3, sp.y - 3, 6, 6);
+            }
         });
         ctx.restore();
     }

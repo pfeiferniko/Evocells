@@ -21,6 +21,7 @@ let mouseY = 0;
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
 let simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
+window.scorePulse = 0;
 
 let globalHerbivoreCount = 0;
 let globalCarnivoreCount = 0;
@@ -340,22 +341,27 @@ uiCanvas.addEventListener('mousedown', (e) => {
         }
 
         // --- NEU: Diamanten einsammeln ---
-        // Wir nutzen eine großzügige Hitbox, damit das auch im 3D Modus (trotz Perspektive) gut klickbar ist!
         for (let i = 0; i < entities.length; i++) {
             const ent = entities[i];
-            if (ent.type === 'diamond' && ent.alive) {
+
+            // WICHTIG: !ent.isCollected hinzufügen, damit man nicht 100x draufklicken kann!
+            if (ent.type === 'diamond' && ent.alive && !ent.isCollected) {
                 const dx = ent.x - clickX;
                 const dy = ent.y - clickY;
 
-                // Radius + 25 Pixel Toleranz
                 const hitRadius = ent.size + 25;
 
                 if (dx * dx + dy * dy < hitRadius * hitRadius) {
-                    simScore += ent.points;
-                    ent.alive = false;
-                    staticGrid.remove(ent);
 
-                    // --- NEU: Punkte-Partikel Perlenkette ---
+                    // --- NEU: Nicht sofort töten, sondern Timer starten! ---
+                    ent.isCollected = true;
+                    ent.collectionTimer = 90; // Deine 90 Frames!
+                    ent.originalSize = ent.size; // Wir merken uns die Startgröße fürs Schrumpfen
+
+                    // WICHTIG: ent.alive = false und staticGrid.remove(ent)
+                    // werden HIER gelöscht, das machen wir später im Update!
+
+                    // --- Punkte-Partikel Perlenkette ---
                     if (typeof scoreParticles !== 'undefined') {
                         const pCount = Math.min(ent.points, 1000);
 
@@ -365,15 +371,11 @@ uiCanvas.addEventListener('mousedown', (e) => {
                         const ctrlX = ent.x + (targetX - ent.x) * 0.4;
                         const ctrlY = Math.min(ent.y, targetY) - 20;
 
-                        // --- DYNAMISCHES DELAY ---
-                        // Wir wollen, dass der letzte Punkt spätestens nach ~90 Frames (1,5 Sek) startet.
-                        let delayStep = 70 / pCount;
-
-                        // Bei extrem wenig Punkten (z.B. 2 Stück) wäre der Abstand sonst 45 Frames.
-                        // Damit das nicht ruckelig wirkt, begrenzen wir den maximalen Abstand auf 15.
+                        // Du meintest, du hast es auf 90 gestellt:
+                        let delayStep = 90 / pCount;
                         if (delayStep > 15) delayStep = 15;
 
-                        for (let i = 0; i < pCount; i++) {
+                        for (let j = 0; j < pCount; j++) { // j statt i nutzen, da i schon in der äußeren Schleife ist
                             scoreParticles.push({
                                 startX: ent.x,
                                 startY: ent.y,
@@ -382,15 +384,12 @@ uiCanvas.addEventListener('mousedown', (e) => {
                                 targetX: targetX,
                                 targetY: targetY,
                                 color: ent.color || '#f1c40f',
-
                                 progress: 0,
                                 speed: 0.002,
-                                // Das Delay passt sich jetzt automatisch der Menge an!
-                                delay: Math.floor(i * delayStep)
+                                delay: Math.floor(j * delayStep)
                             });
                         }
                     }
-
                     break; // Immer nur 1 Diamant pro Klick
                 }
             }
@@ -1092,6 +1091,13 @@ function update() {
                     const diamond = new DiamondCell(e.x, e.y, dSize, dPoints, dColor);
                     newEntities.push(diamond);
                     staticGrid.add(diamond);
+
+                    // --- NEU: Umliegende Pflanzen kurz aufwecken,
+                    // damit sie den neuen Diamanten sofort aus sich herausschieben! ---
+                    const diamondNeighbors = staticGrid.getEntitiesInArea(e.x, e.y, dSize * 2 + 50);
+                    diamondNeighbors.forEach(n => {
+                        if (n.type === 'plant') n.settleTimer = 20;
+                    });
                 }
 
 
@@ -1140,7 +1146,9 @@ function update() {
 
                 const neighbors = staticGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
                 for (const other of neighbors) {
-                    if (other !== e && (other.type === 'plant' || other.type === 'stone')) {
+
+                    // --- NEU: Diamanten in die Kollision mit aufnehmen ---
+                    if (other !== e && (other.type === 'plant' || other.type === 'stone' || other.type === 'diamond')) {
                         const dx = e.x - other.x;
                         const dy = e.y - other.y;
 
@@ -1155,23 +1163,27 @@ function update() {
                             const overlap = minDist - dist;
 
                             if (other.type === 'stone') {
-                                staticGrid.remove(e); // <--- NEU
+                                staticGrid.remove(e);
                                 e.x += Math.cos(angle) * overlap;
                                 e.y += Math.sin(angle) * overlap;
-                                staticGrid.add(e);    // <--- NEU
+                                staticGrid.add(e);
                             } else {
-                                staticGrid.remove(e);     // <--- NEU
-                                staticGrid.remove(other); // <--- NEU
+                                // Gilt für Pflanzen UND Diamanten: Beide schieben sich 50/50 weg
+                                staticGrid.remove(e);
+                                staticGrid.remove(other);
 
                                 e.x += Math.cos(angle) * (overlap / 2);
                                 e.y += Math.sin(angle) * (overlap / 2);
                                 other.x -= Math.cos(angle) * (overlap / 2);
                                 other.y -= Math.sin(angle) * (overlap / 2);
 
-                                staticGrid.add(e);     // <--- NEU
-                                staticGrid.add(other); // <--- NEU
+                                staticGrid.add(e);
+                                staticGrid.add(other);
 
-                                other.settleTimer = 10;
+                                // WICHTIG: Nur Pflanzen haben einen settleTimer zum Aufwecken!
+                                if (other.type === 'plant') {
+                                    other.settleTimer = 10;
+                                }
                             }
 
                             if (overlap > 0.5) {
@@ -1306,8 +1318,25 @@ function update() {
 
         if (e.type === 'diamond') {
             e.update();
+
+            // --- NEU: Einsammel-Animation (Schrumpfen) ---
+            if (e.isCollected) {
+                e.collectionTimer--;
+
+                // Berechnet einen Wert von 1.0 (Start) bis 0.0 (Ende)
+                const ratio = e.collectionTimer / 90;
+
+                // Die Größe schmilzt sanft von der Originalgröße bis auf 1 Pixel (Partikelgröße) zusammen
+                e.size = Math.max(1, e.originalSize * ratio);
+
+                // Erst wenn der Timer abgelaufen ist, stirbt der Diamant wirklich
+                if (e.collectionTimer <= 0) {
+                    e.alive = false;
+                }
+            }
+
             if (!e.alive) {
-                // Wenn er abgelaufen ist, lautlos aus dem Grid entfernen
+                // Wenn er abgelaufen oder fertig gesammelt ist, aus dem Grid entfernen
                 staticGrid.remove(e);
             }
         }
@@ -1369,7 +1398,9 @@ function update() {
 
         // Wenn sie unsichtbar sind, löschen wir sie aus dem Array
         if (p.life <= 0) {
-            particles.splice(i, 1);
+            // Swap & Pop: Schneller geht es nicht!
+            particles[i] = particles[particles.length - 1];
+            particles.pop();
         }
     }
 
@@ -1389,6 +1420,10 @@ function update() {
                 sp.progress += sp.speed;
 
                 if (sp.progress >= 1.0) {
+                    // --- NEU: Punkt geben und Puls-Effekt auslösen ---
+                    simScore += 1;
+                    window.scorePulse = 1.0;
+
                     // Am Ziel angekommen
                     scoreParticles.splice(i, 1);
                     continue;
@@ -1402,6 +1437,10 @@ function update() {
                 sp.y = invT * invT * sp.startY + 2 * invT * t * sp.ctrlY + t * t * sp.targetY;
             }
         }
+    }
+
+    if (window.scorePulse > 0) {
+        window.scorePulse = Math.max(0, window.scorePulse - 0.1);
     }
 }
 
@@ -1458,6 +1497,8 @@ function saveSimulationState() {
     const state = {
         runTime: Date.now() - startTime,
         score: simScore, // <--- NEU: Punktestand ins Savegame packen
+        worldWidth: WORLD_WIDTH,   // <--- NEU: Speichert das Format
+        worldHeight: WORLD_HEIGHT, // <--- NEU: Speichert das Format
         entities: []
     };
 
@@ -1527,38 +1568,66 @@ function loadSimulationState() {
     try { state = JSON.parse(raw); } catch(e) { return false; }
     if (!state || !state.entities || state.entities.length === 0) return false;
 
-    // Simulationstimer wiederherstellen (damit die Start-Wachstumsphase nicht neu triggert)
+    // Simulationstimer wiederherstellen
     startTime = Date.now() - state.runTime;
     simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
+
+    // --- NEU: Prüfen, ob wir die Welt um 90 Grad drehen müssen ---
+    // Fallback auf 2000x1000 für alte Speicherstände ohne die neuen Variablen
+    const savedWidth = state.worldWidth || 2000;
+    const savedHeight = state.worldHeight || 1000;
+    const needsRotation = (savedWidth !== WORLD_WIDTH);
 
     entities = [];
     const idMap = new Map();
 
     // Durchlauf 1: Alle Instanzen als korrekte Klassen wiedererschaffen
     state.entities.forEach(data => {
+        // --- NEU: Temporäre Variablen für die Koordinaten ---
+        let loadX = data.x;
+        let loadY = data.y;
+        let loadAngle = data.angle;
+        let loadSpineX = data.spineX;
+        let loadSpineY = data.spineY;
+
+        // Wenn Breitbild in Hochkant (oder umgekehrt) geladen wird -> 90 Grad drehen!
+        if (needsRotation) {
+            loadX = savedHeight - data.y;
+            loadY = data.x;
+
+            // Auch die Blickrichtung um 90 Grad (PI / 2) drehen
+            if (loadAngle !== undefined) loadAngle += Math.PI / 2;
+
+            // Auch die "Knochen" der Schwänze müssen gedreht werden
+            if (loadSpineX !== undefined && loadSpineY !== undefined) {
+                loadSpineX = savedHeight - data.spineY;
+                loadSpineY = data.spineX;
+            }
+        }
+
         let e;
         if (data.className === 'StoneCell') {
-            e = new StoneCell(data.x, data.y, data.size, data.isSuper);
+            e = new StoneCell(loadX, loadY, data.size, data.isSuper);
             e.color = data.color; // Konstruktor-Farbe überschreiben
         } else if (data.className === 'PlantSegment') {
-            e = new PlantSegment(data.x, data.y, null, data.isSuper, data.baseColor);
+            e = new PlantSegment(loadX, loadY, null, data.isSuper, data.baseColor);
             e.size = data.size; e.age = data.age; e.isTip = data.isTip; e.color = data.color;
             e.generation = data.generation || 0;
         } else if (data.className === 'TailSegment') {
-            e = new TailSegment(data.x, data.y, null, data.size, data.branch, data.depth);
-            e.spineX = data.spineX; e.spineY = data.spineY; e.color = data.color; e.dotColor = data.dotColor;
+            e = new TailSegment(loadX, loadY, null, data.size, data.branch, data.depth);
+            e.spineX = loadSpineX; e.spineY = loadSpineY; e.color = data.color; e.dotColor = data.dotColor;
         } else if (data.className === 'DiamondCell') {
-            e = new DiamondCell(data.x, data.y, data.size, data.points, data.color);
+            e = new DiamondCell(loadX, loadY, data.size, data.points, data.color);
             e.life = data.life;
             e.maxLife = data.maxLife;
-            e.angle = data.angle;
+            e.angle = loadAngle;
         } else if (['HerbivoreCell', 'CarnivoreCell', 'SnakeCell'].includes(data.className)) {
             let gen = new Genome(data.genome);
-            if (data.className === 'HerbivoreCell') e = new HerbivoreCell(data.x, data.y, gen, false);
-            if (data.className === 'CarnivoreCell') e = new CarnivoreCell(data.x, data.y, gen);
-            if (data.className === 'SnakeCell') e = new SnakeCell(data.x, data.y, gen);
+            if (data.className === 'HerbivoreCell') e = new HerbivoreCell(loadX, loadY, gen, false);
+            if (data.className === 'CarnivoreCell') e = new CarnivoreCell(loadX, loadY, gen);
+            if (data.className === 'SnakeCell') e = new SnakeCell(loadX, loadY, gen);
 
-            e.size = data.size; e.angle = data.angle; e.energy = data.energy; e.age = data.age;
+            e.size = data.size; e.angle = loadAngle; e.energy = data.energy; e.age = data.age;
             e.reproductionCount = data.reproductionCount; e.speedMultiplier = data.speedMultiplier;
             e.agingFactor = data.agingFactor; e.color = data.color; e.dotColor = data.dotColor;
 
@@ -1576,7 +1645,6 @@ function loadSimulationState() {
             idMap.set(data.id, e);
             entities.push(e);
 
-            // Steine und Pflanzen direkt wieder ins statische Grid packen
             if (e.type === 'stone' || e.type === 'plant') {
                 staticGrid.add(e);
             }

@@ -13,7 +13,7 @@ window.SETTINGS = {
     SCORE_HERBIVORE_BIRTH: 10,  // Punkte für ein Pflanzenfresser-Baby
     SCORE_CARNIVORE_BIRTH: 500,  // Punkte für ein Fleischfresser-Baby
     SCORE_SNAKE_BIRTH: 1000,      // Punkte für ein Schlangen-Baby
-    DIAMOND_LIFETIME: 600, // NEU: 600 Frames entsprechen ca. 10 Sekunden
+    DIAMOND_LIFETIME: 1800, // NEU: 600 Frames entsprechen ca. 10 Sekunden
 
     // ==========================================
     // START-BEDINGUNGEN (SPAWN)
