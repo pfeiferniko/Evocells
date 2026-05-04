@@ -94,7 +94,7 @@ if (fullscreenBtn) {
             } else if (elem.webkitRequestFullscreen) { /* Safari / iOS */
                 elem.webkitRequestFullscreen();
             }
-            fullscreenBtn.innerText = "Beenden";
+            fullscreenBtn.innerText = "Vollbild Beenden";
             fullscreenBtn.style.background = "rgba(0, 0, 0, 0.5)";
         } else {
             // Vollbild beenden
@@ -144,6 +144,7 @@ if (modeBtn) {
     });
 }
 
+
 // Wir definieren alle unsere gewünschten Stufen in einer einfachen Liste
 const pixelModes = [
     { label: "AUS", factor: 1.0 },
@@ -156,7 +157,8 @@ const pixelModes = [
 ];
 
 let currentPixelMode = 0; // Startet bei Index 0 (AUS)
-const pixelBtn = document.getElementById('pixel-btn');
+
+/*const pixelBtn = document.getElementById('pixel-btn');
 
 if (pixelBtn) {
     // Setzt den Text direkt beim Start auf den richtigen Wert ("Pixel: 0.6")
@@ -169,7 +171,7 @@ if (pixelBtn) {
         pixelBtn.innerText = `Pixel: ${mode.label}`;
         applyResolution(mode.factor);
     });
-}
+}*/
 
 function applyResolution(factor) {
     canvas.width = WORLD_WIDTH * factor;
@@ -199,6 +201,7 @@ function applyResolution(factor) {
         uiCanvas.classList.add('pixel-mode');
     }
 }
+
 
 // Hilfsfunktion, um schnell neue Krümel zu erzeugen
 function createParticles(x, y, color, count, baseSize = null) {
