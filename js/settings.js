@@ -6,6 +6,8 @@ window.SETTINGS = {
     WORLD_BASE_HEIGHT: 1000,
     GRID_SIZE: 100,
     STARTUP_PHASE_DURATION: 3000, // Millisekunden für die anfängliche "Schnellwachstum"-Phase der Pflanzen
+    DAY_LENGTH_MS: 120000,
+
 
     // ==========================================
     // PUNKTE-SYSTEM (SCORE)

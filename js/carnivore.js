@@ -171,8 +171,16 @@ class CarnivoreCell extends AnimalCell {
 
             // --- 3. NORMALE JAGD ---
             if ((this.ignoreTargetTimer || 0) <= 0) {
-                // Wir suchen regelmäßig (alle 10 Frames) oder wenn wir kein Ziel haben
-                if (!this.target || !this.target.alive || this.age % 60 === 0) {
+                // --- NEU: Nachtruhe für Raubtiere ---
+                // Tag-Zeit: 0.0 (Mitternacht) -> 0.25 (Sonnenaufgang) -> 0.5 (Mittag) -> 0.75 (Sonnenuntergang)
+                const timeOfDay = typeof window.dayTime !== 'undefined' ? (window.dayTime % 1) : 0.5;
+                const isNight = (timeOfDay < 0.25 || timeOfDay > 0.75);
+
+                if (isNight && (!this.target || !this.target.alive)) {
+                      // Nachts im Dunkeln: Wenn wir kein Ziel haben oder es gerade gefressen wurde, suchen wir kein neues!
+                      this.target = null;
+                } else if (!isNight && (!this.target || !this.target.alive || this.age % 60 === 0)) {
+
                     // Für die Jagd schauen wir wieder etwas weiter
                     const huntEntities = dynamicGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
 

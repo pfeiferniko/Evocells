@@ -1,5 +1,4 @@
-window.isDemoMode = false;
-window.is3DMode = false; // Neuer globaler Schalter
+window.is3DMode = true; // Neuer globaler Schalter
 
 // main.js - ganz oben
 const canvas = document.getElementById('canvas2D');
@@ -20,8 +19,6 @@ let mouseY = 0;
 
 let entities = [];
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
-let simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
-window.scorePulse = 0;
 
 let globalHerbivoreCount = 0;
 let globalCarnivoreCount = 0;
@@ -34,7 +31,6 @@ const planktons = [];
 
 // --- PARTIKEL-SYSTEM (Fress-Krümel) ---
 let particles = [];
-let scoreParticles = []; // <--- NEU: Schwarm-Partikel für die Punkte
 
 // --- DEBUG-LINIEN LOGIK ---
 let showDebugLines = false;
@@ -113,85 +109,37 @@ if (fullscreenBtn) {
     });
 }
 
-const demoBtn = document.getElementById('demo-btn');
-
-if (demoBtn) {
-    demoBtn.innerText = "Demo: AUS";
-    demoBtn.style.color = "#555";
-
-    demoBtn.addEventListener('click', () => {
-        // Fall 1: Demo-Modus wird EINGESCHALTET
-        if (!window.isDemoMode) {
-
-            // --- NEU: VOR dem Wechsel zwingend den aktuellen Spielstand speichern! ---
-            if (entities.length > 0) {
-                saveSimulationState();
-                console.log("Echter Spielstand vor Demo-Start sicher gespeichert.");
-            }
-
-            window.isDemoMode = true;
-
-            // Alles sauber leeren für die Demo
-            entities = [];
-            particles = [];
-            staticGrid.clear();
-            dynamicGrid.clear();
-            startTime = Date.now();
-
-            demoBtn.innerText = "Demo: AN";
-            demoBtn.style.color = "#999";
-
-            // Shop erzwingend schließen
-            if (typeof isShopOpen !== 'undefined') {
-                isShopOpen = false;
-                isPlacementMode = false;
-                pendingItem = null;
-            }
-
-            // Demo-Welt generieren
-            generateInitialWorld();
-
-            // Fall 2: Demo-Modus wird AUSGESCHALTET
-        } else {
-            window.isDemoMode = false;
-
-            // Demo-Entities komplett löschen
-            entities = [];
-            particles = [];
-            staticGrid.clear();
-            dynamicGrid.clear();
-
-            demoBtn.innerText = "Demo: AUS";
-            demoBtn.style.color = "#555";
-
-            // Versuchen, die eben gespeicherte Welt wiederherzustellen
-            if (loadSimulationState()) {
-                console.log("Gespeicherte Welt nach Demo-Modus erfolgreich geladen.");
-            } else {
-                console.log("Kein Spielstand vorhanden. Starte kleine Welt.");
-                startTime = Date.now();
-                generateInitialWorld2();
-            }
-        }
-    });
-}
 
 const modeBtn = document.getElementById('mode-btn');
 if (modeBtn) {
+    // --- NEU: 1. Start-Zustand sofort beim Laden richtig setzen ---
+    if (window.is3DMode) {
+        modeBtn.innerText = "Ansicht: 3D";
+        modeBtn.style.color = "#999";
+        canvas.style.display = 'none';      // 2D verstecken
+        canvas3D.style.display = 'block';   // 3D erzwingen
+    } else {
+        modeBtn.innerText = "Ansicht: 2D";
+        modeBtn.style.color = "#555";
+        canvas.style.display = 'block';     // 2D erzwingen
+        canvas3D.style.display = 'none';    // 3D verstecken
+    }
+
+    // 2. Klick-Verhalten (bleibt wie vorher)
     modeBtn.addEventListener('click', () => {
         window.is3DMode = !window.is3DMode;
 
         if (window.is3DMode) {
             modeBtn.innerText = "Ansicht: 3D";
             modeBtn.style.color = "#999";
-            canvas.style.display = 'none';      // 2D verstecken
-            canvas3D.style.display = 'block';   // 3D anzeigen
+            canvas.style.display = 'none';
+            canvas3D.style.display = 'block';
         } else {
             modeBtn.innerText = "Ansicht: 2D";
             modeBtn.style.color = "#555";
-            canvas.style.display = 'block';     // 2D anzeigen
-            canvas3D.style.display = 'none';    // 3D verstecken
-            uiCtx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT); // UI-Scheibe putzen
+            canvas.style.display = 'block';
+            canvas3D.style.display = 'none';
+            uiCtx.clearRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
         }
     });
 }
@@ -417,7 +365,6 @@ function init() {
     staticGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
     dynamicGrid = new Grid(WORLD_WIDTH, WORLD_HEIGHT, GRID_SIZE);
 
-    // Wasserstaub (Plankton) generieren (Dieser ist nur visuell und wird immer neu erstellt)
     for (let i = 0; i < PLANKTON_COUNT; i++) {
         planktons.push({
             x: Math.random() * WORLD_WIDTH,
@@ -436,14 +383,23 @@ function init() {
     } else {
         console.log("No valid save state found. Starting fresh.");
         startTime = Date.now();
-        generateInitialWorld2(); // <-- HIER: Die 2 anhängen!
+
+        // Prüfen, ob der Nutzer beim Reset eine "leere" Welt gefordert hat
+        const startMode = localStorage.getItem('evoSimStartMode');
+        if (startMode === 'empty') {
+            generateInitialWorld2(); // Kleine/Leere Welt
+        } else {
+            generateInitialWorld(); // Gefüllte Welt (wie ehemals Demo)
+        }
+        localStorage.removeItem('evoSimStartMode'); // Flag wieder aufräumen
     }
 
     animate();
 }
 
+
 function generateInitialWorld2() {
-    const stones = [];
+    /*const stones = [];
 
     // 1. Steine generieren
     for (let i = 0; i < 1; i++) {
@@ -477,7 +433,7 @@ function generateInitialWorld2() {
         let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
         entities.push(herbivore);
         addInitialTail(herbivore, entities);
-    }
+    }*/
 
     console.log("Entities created:", entities.length);
 }
@@ -1075,7 +1031,7 @@ function update() {
                 }
 
                 // --- NEU: Diamant droppen, wenn es ein friedlicher Tod im Alter war ---
-                if (!window.isDemoMode && !e.isEaten && e.reproductionCount >= e.maxReproductions) {
+                /*if (!window.isDemoMode && !e.isEaten && e.reproductionCount >= e.maxReproductions) {
                     let dPoints, dColor,  dSize = 15; // Basis: Herbivore
 
                     dColor = e.color;
@@ -1098,7 +1054,7 @@ function update() {
                     diamondNeighbors.forEach(n => {
                         if (n.type === 'plant') n.settleTimer = 20;
                     });
-                }
+                }*/
 
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
@@ -1439,6 +1395,12 @@ function update() {
         }
     }
 
+    // --- NEU: Tag-Nacht-Zyklus an echte Laufzeit koppeln ---
+    const runTimeMs = Date.now() - startTime;
+    // Wir addieren 0.5, damit die Welt bei Start bei 50% (Mittag) beginnt.
+    // % 1 sorgt dafür, dass der Wert danach immer brav zwischen 0.0 und 0.99 bleibt.
+    window.dayTime = ((runTimeMs % window.SETTINGS.DAY_LENGTH_MS) / window.SETTINGS.DAY_LENGTH_MS + 0.5) % 1;
+
     if (window.scorePulse > 0) {
         window.scorePulse = Math.max(0, window.scorePulse - 0.1);
     }
@@ -1496,13 +1458,13 @@ let isResetting = false; // <--- NEU: Schalter, um das Speichern beim Neustart z
 function saveSimulationState() {
     const state = {
         runTime: Date.now() - startTime,
-        score: simScore, // <--- NEU: Punktestand ins Savegame packen
-        worldWidth: WORLD_WIDTH,   // <--- NEU: Speichert das Format
-        worldHeight: WORLD_HEIGHT, // <--- NEU: Speichert das Format
+        // score: simScore wurde hier entfernt!
+        worldWidth: WORLD_WIDTH,
+        worldHeight: WORLD_HEIGHT,
         entities: []
     };
 
-    // 1. Temporäre IDs für alle vergeben (damit wir Verknüpfungen wiederherstellen können)
+    // 1. Temporäre IDs für alle vergeben
     entities.forEach((e, i) => e._saveId = i);
 
     // 2. Objekte in reines JSON übersetzen
@@ -1521,13 +1483,8 @@ function saveSimulationState() {
             data.baseColor = e.baseColor;
             data.age = e.age;
             data.isTip = e.isTip;
-            data.generation = e.generation || 0; // <--- NEU
+            data.generation = e.generation || 0;
             data.parentId = e.parent ? e.parent._saveId : null;
-        } else if (e.type === 'diamond') {
-            data.points = e.points;
-            data.life = e.life;
-            data.maxLife = e.maxLife;
-            data.angle = e.angle;
         } else if (e.type === 'tail') {
             data.branch = e.branch;
             data.depth = e.depth;
@@ -1545,7 +1502,6 @@ function saveSimulationState() {
             data.agingFactor = e.agingFactor;
             data.dotColor = e.dotColor;
             data.isGiant = e.isGiant || false;
-            // Ziele/Wegpunkte absichtlich NICHT speichern, damit sie nicht verbuggen
             data.tailSegmentIds = e.tailSegments.map(t => t._saveId);
         }
         return data;
@@ -1553,8 +1509,7 @@ function saveSimulationState() {
 
     try {
         localStorage.setItem('evoSimState', JSON.stringify(state));
-        // NEU: Punkte in einen separaten Tresor legen
-        localStorage.setItem('evoSimScore', simScore);
+        // Der evoSimScore Eintrag wurde hier ebenfalls entfernt
     } catch(err) {
         console.warn("Konnte nicht speichern (LocalStorage voll?)", err);
     }
@@ -1570,10 +1525,8 @@ function loadSimulationState() {
 
     // Simulationstimer wiederherstellen
     startTime = Date.now() - state.runTime;
-    simScore = parseInt(localStorage.getItem('evoSimScore')) || 1000;
+    // simScore wurde hier entfernt!
 
-    // --- NEU: Prüfen, ob wir die Welt um 90 Grad drehen müssen ---
-    // Fallback auf 2000x1000 für alte Speicherstände ohne die neuen Variablen
     const savedWidth = state.worldWidth || 2000;
     const savedHeight = state.worldHeight || 1000;
     const needsRotation = (savedWidth !== WORLD_WIDTH);
@@ -1581,24 +1534,17 @@ function loadSimulationState() {
     entities = [];
     const idMap = new Map();
 
-    // Durchlauf 1: Alle Instanzen als korrekte Klassen wiedererschaffen
     state.entities.forEach(data => {
-        // --- NEU: Temporäre Variablen für die Koordinaten ---
         let loadX = data.x;
         let loadY = data.y;
         let loadAngle = data.angle;
         let loadSpineX = data.spineX;
         let loadSpineY = data.spineY;
 
-        // Wenn Breitbild in Hochkant (oder umgekehrt) geladen wird -> 90 Grad drehen!
         if (needsRotation) {
             loadX = savedHeight - data.y;
             loadY = data.x;
-
-            // Auch die Blickrichtung um 90 Grad (PI / 2) drehen
             if (loadAngle !== undefined) loadAngle += Math.PI / 2;
-
-            // Auch die "Knochen" der Schwänze müssen gedreht werden
             if (loadSpineX !== undefined && loadSpineY !== undefined) {
                 loadSpineX = savedHeight - data.spineY;
                 loadSpineY = data.spineX;
@@ -1608,7 +1554,7 @@ function loadSimulationState() {
         let e;
         if (data.className === 'StoneCell') {
             e = new StoneCell(loadX, loadY, data.size, data.isSuper);
-            e.color = data.color; // Konstruktor-Farbe überschreiben
+            e.color = data.color;
         } else if (data.className === 'PlantSegment') {
             e = new PlantSegment(loadX, loadY, null, data.isSuper, data.baseColor);
             e.size = data.size; e.age = data.age; e.isTip = data.isTip; e.color = data.color;
@@ -1616,11 +1562,6 @@ function loadSimulationState() {
         } else if (data.className === 'TailSegment') {
             e = new TailSegment(loadX, loadY, null, data.size, data.branch, data.depth);
             e.spineX = loadSpineX; e.spineY = loadSpineY; e.color = data.color; e.dotColor = data.dotColor;
-        } else if (data.className === 'DiamondCell') {
-            e = new DiamondCell(loadX, loadY, data.size, data.points, data.color);
-            e.life = data.life;
-            e.maxLife = data.maxLife;
-            e.angle = loadAngle;
         } else if (['HerbivoreCell', 'CarnivoreCell', 'SnakeCell'].includes(data.className)) {
             let gen = new Genome(data.genome);
             if (data.className === 'HerbivoreCell') e = new HerbivoreCell(loadX, loadY, gen, false);
@@ -1635,7 +1576,7 @@ function loadSimulationState() {
                 e.isGiant = true;
                 e.maxReproductions = Infinity;
             }
-            e.tailSegments = []; // Wird im 2. Durchlauf gefüllt
+            e.tailSegments = [];
             e._tailIds = data.tailSegmentIds;
         }
 
@@ -1651,7 +1592,6 @@ function loadSimulationState() {
         }
     });
 
-    // Durchlauf 2: Alle Referenzen (Elternteile & Schwänze) wieder verknüpfen
     entities.forEach(e => {
         if (e.type === 'plant' || e.type === 'tail') {
             if (e._loadParentId !== undefined && e._loadParentId !== null) {
@@ -1678,26 +1618,56 @@ window.addEventListener('beforeunload', () => {
     if (!isResetting && !window.isDemoMode && entities.length > 0) saveSimulationState();
 });
 
-// Neustart-Button Logik (geändert)
+// --- Custom Neustart-Logik ---
+const restartModal = document.getElementById('restart-modal');
 const resetBtn = document.getElementById('reset-btn');
+const resetEmptyBtn = document.getElementById('reset-empty-btn');
+const resetFullBtn = document.getElementById('reset-full-btn');
+const resetCancelBtn = document.getElementById('reset-cancel-btn');
+
+// Button in der Leiste öffnet das Menü
 if (resetBtn) {
     resetBtn.addEventListener('click', () => {
-        // NEU: Im Demo-Modus das Löschen des Spielstands blockieren
-        if (window.isDemoMode) {
-            alert("Im Demo-Modus kann nicht neu gestartet werden. Bitte beende den Demo-Modus zuerst.");
-            return;
-        }
-
-        if(confirm("Simulation wird neu gestartet. Der Punktestand wird übernommen...")) {
-            isResetting = true;
-            localStorage.removeItem('evoSimState');
-            if (simScore < 1000) {
-                localStorage.setItem('evoSimScore', 1000);
-            }
-            location.reload();
-        }
+        restartModal.classList.remove('hidden');
     });
 }
+
+// Option: Leere Welt
+if (resetEmptyBtn) {
+    resetEmptyBtn.addEventListener('click', () => {
+        executeReset('empty');
+    });
+}
+
+// Option: Voll gefüllte Welt
+if (resetFullBtn) {
+    resetFullBtn.addEventListener('click', () => {
+        executeReset('filled');
+    });
+}
+
+// Option: Abbrechen
+if (resetCancelBtn) {
+    resetCancelBtn.addEventListener('click', () => {
+        restartModal.classList.add('hidden');
+    });
+}
+
+// Hilfsfunktion für den eigentlichen Reset
+function executeReset(mode) {
+    isResetting = true;
+    localStorage.setItem('evoSimStartMode', mode);
+    localStorage.removeItem('evoSimState');
+    location.reload();
+}
+
+// Schließt das Menü auch mit der ESC-Taste
+window.addEventListener('keydown', (e) => {
+    if (e.key === "Escape") {
+        restartModal.classList.add('hidden');
+    }
+});
+
 
 // --- Impressum Logik ---
 const impressumBtn = document.getElementById('impressum-btn');

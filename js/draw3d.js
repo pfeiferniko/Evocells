@@ -3,6 +3,7 @@
 // ==========================================
 
 let scene, camera, renderer, light;
+let ambientLight; // <--- NEU: Global speichern, damit wir es dimmen können
 let entityMeshes = new Map();
 let particleMeshes = new Map(); // Für die Fress-Krümel/Todes-Partikel
 
@@ -64,8 +65,9 @@ function init3D() {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFShadowMap;
 
-    // 2. Umgebungslicht: Wir bleiben bei 0.5, um die Grundsichtbarkeit zu halten.
-    scene.add(new THREE.AmbientLight(0x405060, 0.4));
+// 2. Umgebungslicht in der Variable speichern
+    ambientLight = new THREE.AmbientLight(0x405060, 0.6);
+    scene.add(ambientLight);
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
     light = new THREE.DirectionalLight(0xe0f0ff, 2);
@@ -84,8 +86,8 @@ function init3D() {
     light.shadow.camera.near = 10;
     light.shadow.camera.far = 2500;
 
-    light.shadow.mapSize.width = 1024;
-    light.shadow.mapSize.height = 1024;
+    light.shadow.mapSize.width = 1200;
+    light.shadow.mapSize.height = 1200;
     light.shadow.bias = -0.0005;
 
     scene.add(light);
@@ -95,7 +97,7 @@ function init3D() {
     // fast schwarzen Hintergrund (0x020406) immer noch genug Fläche für Schatten.
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
-        new THREE.MeshPhongMaterial({ color: 0x0303040 })
+        new THREE.MeshPhongMaterial({ color: 0x0505060 })
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
@@ -132,9 +134,49 @@ function init3D() {
     initInstancedMeshes();
 }
 
+// --- OPTIMIERTER 3D Tagesablauf (Original-Position mit leichtem Pendeln) ---
+function updateDayNight3D() {
+    if (!light || !ambientLight) return;
+
+    // timePhase schwingt sanft von 0.0 (Mitternacht) bis 1.0 (Mittag)
+    const timePhase = (Math.cos(window.dayTime * Math.PI * 2) * -1 + 1) / 2;
+
+    // 1. POSITION: Zurück zur Original-Ausrichtung (y = 200, z = -500)
+    // Wandert nur leicht (z.B. +/- 400 Pixel) nach links und rechts
+    light.position.x = window.WORLD_WIDTH / 2 + Math.sin(window.dayTime * Math.PI * 2) * 400;
+    light.position.y = 200;
+    light.position.z = -500;
+
+    // 2. HAUPTLICHT:
+    // Intensität schwankt sanft zwischen 0.8 (Nacht) und 2.0 (Tag - das war dein Originalwert)
+    light.intensity = 1.2 + (timePhase * 0.8);
+
+    // Farbe: Von einem kühlen Blau-Weiß (Nacht) zu einem warmen, strahlenden Weiß (Tag)
+    const sunR = 0x88 + (0x66 * timePhase);
+    const sunG = 0xaa + (0x44 * timePhase);
+    const sunB = 0xff; // Bleibt auf Maximum für sauberes Licht
+    light.color.setRGB(sunR/255, sunG/255, sunB/255);
+
+    // 3. UMGEBUNGSLICHT (Ambient):
+    // Schwankt sehr dezent zwischen 0.4 (Nacht) und 0.6 (Tag)
+    ambientLight.intensity = 0.4 + (timePhase * 0.2);
+
+    // Ambient-Farbe (Kühlt nachts etwas ab)
+    const ambR = 0x20 + (0x20 * timePhase);
+    const ambG = 0x30 + (0x20 * timePhase);
+    const ambB = 0x50 + (0x10 * timePhase);
+    ambientLight.color.setRGB(ambR/255, ambG/255, ambB/255);
+
+    // 4. HINTERGRUND: Pulsiert nur hauchzart mit
+    const bgR = 0x08 + (0x04 * timePhase);
+    const bgG = 0x10 + (0x06 * timePhase);
+    const bgB = 0x18 + (0x0a * timePhase);
+    scene.background.setRGB(bgR/255, bgG/255, bgB/255);
+}
+
 function initInstancedMeshes() {
-    // Partikel (Krümel)
-    const particleMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+    // Partikel (Krümel) - Jetzt mit Phong-Material für korrekte Beleuchtung
+    const particleMat = new THREE.MeshPhongMaterial({ color: 0xffffff, flatShading: true });
     particlesInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.particle, particleMat, MAX_PARTICLES);
     particlesInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     particlesInstancedMesh.castShadow = true; // Wie gewünscht beibehalten
@@ -160,6 +202,14 @@ function initInstancedMeshes() {
     diamondsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     diamondsInstancedMesh.castShadow = true;
     scene.add(diamondsInstancedMesh);
+
+    // --- BUGFIX: Farb-Puffer für die Grafikkarte erzwingen ---
+        // Wenn die Welt leer startet, muss die Engine trotzdem wissen,
+        // dass diese Objekte später individuelle Farben bekommen.
+        const dummyColor = new THREE.Color(0xffffff);
+        if (plantsInstancedMesh) plantsInstancedMesh.setColorAt(0, dummyColor);
+        if (stonesInstancedMesh) stonesInstancedMesh.setColorAt(0, dummyColor);
+        if (particlesInstancedMesh) particlesInstancedMesh.setColorAt(0, dummyColor);
 }
 
 function initPlankton3D() {
@@ -193,6 +243,8 @@ function draw3D() {
     updatePlanktonPositions();
     syncEntities();
     syncParticles();
+
+    updateDayNight3D();
 
     renderer.render(scene, camera);
     drawUIOverlay();
@@ -476,7 +528,7 @@ function createMeshForEntity(e) {
         body.receiveShadow = true;
         group.add(body);
 
-        const eyeColor = (e.constructor.name === 'CarnivoreCell' || e.isGiant) ? 0x000000 : 0xffffff;
+        const eyeColor = 0xffffff; //(e.constructor.name === 'CarnivoreCell' || e.isGiant) ? 0x000000 : 0xffffff;
         const eyeMat = getPooledMaterial(eyeColor, 'basic');
 
         const eye1 = new THREE.Mesh(SHARED_GEOMETRIES.eye, eyeMat);
@@ -505,19 +557,6 @@ function drawUIOverlay() {
 
         drawScoreAndPerformance(uiCtx);
 
-        // --- NEU: Score-Partikel im 3D-Modus ---
-        if (typeof scoreParticles !== 'undefined') {
-            uiCtx.save();
-            uiCtx.globalCompositeOperation = 'lighter';
-            scoreParticles.forEach(sp => {
-                if (sp.delay <= 0) {
-                    uiCtx.fillStyle = sp.color;
-                    uiCtx.fillRect(sp.x - 3, sp.y - 3, 6, 6);
-                }
-            });
-            uiCtx.restore();
-        }
-
         if (typeof drawShopUI === 'function') drawShopUI();
 
         window.ctx = originalCtx;
@@ -525,50 +564,50 @@ function drawUIOverlay() {
 }
 
 function drawScoreAndPerformance(c) {
-    if (!window.isDemoMode) {
-        c.save();
-
-        // --- Dynamische Schriftgröße für den Score (wie zuvor eingebaut) ---
-        const currentFontSize = 24 + ((window.scorePulse || 0) * 10);
-        c.font = `bold ${currentFontSize}px sans-serif`;
-
-        c.fillStyle = '#FFD700';
-
-        const textY = 50 - ((window.scorePulse || 0) * 5);
-        c.fillText(`Punkte: ${simScore}`, 30, textY);
-
-        c.restore();
-    }
 
     // --- NEU: FPS- und Performance-Overlay für den 3D-Modus ---
     if (typeof showFps !== 'undefined' && showFps) {
-        c.save();
+       c.save();
+                   c.font = '16px sans-serif';
+                   c.textAlign = 'left';
+                   c.textBaseline = 'top';
 
-        c.font = '16px sans-serif';
-        c.textAlign = 'left';
-        c.textBaseline = 'top';
+                   // 1. Zeiten berechnen
+                   const runSec = Math.floor((Date.now() - startTime) / 1000);
+                   const rH = Math.floor(runSec / 3600).toString().padStart(2, '0');
+                   const rM = Math.floor((runSec % 3600) / 60).toString().padStart(2, '0');
+                   const rS = (runSec % 60).toString().padStart(2, '0');
 
-        // Wir nutzen window.WORLD_HEIGHT, da wir auf dem UI-Canvas zeichnen
-        const boxHeight = 135;
-        const startY = window.WORLD_HEIGHT - boxHeight - 10;
+                   const totalGameMin = Math.floor((window.dayTime || 0) * 24 * 60);
+                   const gH = Math.floor(totalGameMin / 60).toString().padStart(2, '0');
+                   const gM = (totalGameMin % 60).toString().padStart(2, '0');
 
-        c.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        c.fillRect(10, startY, 220, boxHeight);
+                   // 2. Box zeichnen
+                   const boxHeight = 185;
+                   const startY = window.WORLD_HEIGHT - boxHeight - 10;
 
-        c.fillStyle = 'white';
+                   c.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                   c.fillRect(10, startY, 220, boxHeight);
 
-        // Alle Infos sauber untereinander, exakt wie im 2D-Modus
-        c.fillText(`FPS: ${currentFps}`, 20, startY + 10);
-        c.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
-        c.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
+                   // 3. Texte zeichnen
+                   c.fillStyle = 'white';
+                   c.fillText(`FPS: ${currentFps}`, 20, startY + 10);
+                   c.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
+                   c.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
 
-        // Die neuen Zähler
-        c.fillStyle = '#f1c40f'; // Leicht gelblich für Pflanzenfresser
-        c.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
+                   c.fillStyle = '#f1c40f';
+                   c.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
 
-        c.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
-        c.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
+                   c.fillStyle = '#e74c3c';
+                   c.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
 
-        c.restore();
+                   // --- NEU: Die Zeiten ---
+                   c.fillStyle = '#3498db';
+                   c.fillText(`Laufzeit: ${rH}:${rM}:${rS}`, 20, startY + 135);
+
+                   c.fillStyle = '#2ecc71';
+                   c.fillText(`Labor-Zeit: ${gH}:${gM} Uhr`, 20, startY + 160);
+
+                   c.restore();
     }
 }

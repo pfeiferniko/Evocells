@@ -10,7 +10,6 @@
 <div id="game-container">
     <div id="controls-bar">
         <button id="fullscreen-btn">Vollbild</button>
-        <button id="demo-btn">Demo: AUS</button>
         <button id="mode-btn">Ansicht: 2D</button>
         <button id="reset-btn" style="color: #ff5555;">Neustart</button>
     </div>
@@ -42,6 +41,18 @@
             Telefon: +49 (0) 171 2188051<br>
             E-Mail: pfeifer.niko@gmail.com
         </p>
+    </div>
+</div>
+
+<div id="restart-modal" class="hidden">
+    <div class="modal-content">
+        <h2>Simulation Neustarten</h2>
+        <p>Wie soll die neue Welt aussehen?</p>
+        <div class="restart-options">
+            <button id="reset-full-btn" class="menu-btn primary">Gefüllte Welt</button>
+            <button id="reset-empty-btn" class="menu-btn">Leere Welt (Sandbox)</button>
+            <button id="reset-cancel-btn" class="menu-btn cancel">Abbrechen</button>
+        </div>
     </div>
 </div>
 

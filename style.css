@@ -185,3 +185,65 @@ canvas.pixel-mode {
 #close-btn:hover {
     color: #fff;
 }
+
+/* Styling für das Neustart-Menü */
+#restart-modal {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background-color: rgba(0, 0, 0, 0.85);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 2000;
+}
+
+#restart-modal.hidden {
+    display: none;
+}
+
+.restart-options {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.menu-btn {
+    padding: 15px 25px;
+    border: 1px solid #444;
+    background: #333;
+    color: #eee;
+    cursor: pointer;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.2s;
+}
+
+.menu-btn:hover {
+    background: #444;
+    border-color: #666;
+    transform: translateY(-2px);
+}
+
+.menu-btn.primary {
+    background: #2c3e50;
+    border-color: #3498db;
+}
+
+.menu-btn.primary:hover {
+    background: #34495e;
+}
+
+.menu-btn.cancel {
+    margin-top: 10px;
+    background: transparent;
+    border: none;
+    color: #888;
+    text-decoration: underline;
+}
+
+.menu-btn.cancel:hover {
+    color: #ff5555;
+}

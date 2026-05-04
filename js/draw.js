@@ -191,7 +191,7 @@ function draw2D() {
             }
 
             // --- 3. DIE AUGEN ---
-            ctx.fillStyle = (e instanceof CarnivoreCell || e.isGiant) ? 'black' : 'white';
+            /*ctx.fillStyle = (e instanceof CarnivoreCell || e.isGiant) ? 'black' : 'white';
             const eyeRadius = Math.max(1.5, e.size * 0.15);
 
             const eyeLocalX = e.size * 0.4;
@@ -209,7 +209,7 @@ function draw2D() {
             ctx.beginPath();
             ctx.arc(eye1X, eye1Y, eyeRadius, 0, Math.PI * 2);
             ctx.arc(eye2X, eye2Y, eyeRadius, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.fill();*/
 
             // --- Debug-Linien für Fluchtverhalten ---
             if (showDebugLines) {
@@ -289,7 +289,7 @@ function draw2D() {
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-    if (!window.isDemoMode) {
+    /*if (!window.isDemoMode) {
         ctx.save();
 
         // --- NEU: Dynamische Schriftgröße ---
@@ -319,53 +319,100 @@ function draw2D() {
         ctx.fillText(scoreText, 25, 20);
 
         ctx.restore();
-    }
+    }*/
 
     // --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
     if (showFps) {
         ctx.save();
+                ctx.font = '16px sans-serif';
+                ctx.textAlign = 'left';
+                ctx.textBaseline = 'top';
 
-        ctx.font = '16px sans-serif';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
+                // 1. Zeiten berechnen
+                // Reale Laufzeit
+                const runSec = Math.floor((Date.now() - startTime) / 1000);
+                const rH = Math.floor(runSec / 3600).toString().padStart(2, '0');
+                const rM = Math.floor((runSec % 3600) / 60).toString().padStart(2, '0');
+                const rS = (runSec % 60).toString().padStart(2, '0');
 
-        // Die Box muss höher (135) und etwas breiter (220) werden
-        const boxHeight = 135;
-        const startY = WORLD_HEIGHT - boxHeight - 10;
+                // Labor-Zeit (In-Game)
+                const totalGameMin = Math.floor((window.dayTime || 0) * 24 * 60);
+                const gH = Math.floor(totalGameMin / 60).toString().padStart(2, '0');
+                const gM = (totalGameMin % 60).toString().padStart(2, '0');
 
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-        ctx.fillRect(10, startY, 220, boxHeight);
+                // 2. Box zeichnen (Höher gemacht für die neuen Einträge)
+                const boxHeight = 185; // Vorher 135
+                const startY = WORLD_HEIGHT - boxHeight - 10;
 
-        ctx.fillStyle = 'white';
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(10, startY, 220, boxHeight);
 
-        // Alle Infos sauber untereinander
-        ctx.fillText(`FPS: ${currentFps}`, 20, startY + 10);
-        ctx.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
-        ctx.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
+                // 3. Texte zeichnen
+                ctx.fillStyle = 'white';
+                ctx.fillText(`FPS: ${currentFps}`, 20, startY + 10);
+                ctx.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
+                ctx.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
 
-        // Die neuen Zähler
-        ctx.fillStyle = '#f1c40f'; // Leicht gelblich für Pflanzenfresser
-        ctx.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
+                ctx.fillStyle = '#f1c40f'; // Gelblich für Pflanzenfresser
+                ctx.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
 
-        ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
-        ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
+                ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
+                ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
 
-        ctx.restore();
+                // --- NEU: Die Zeiten ---
+                ctx.fillStyle = '#3498db'; // Blau für die echte Laufzeit
+                ctx.fillText(`Laufzeit: ${rH}:${rM}:${rS}`, 20, startY + 135);
+
+                ctx.fillStyle = '#2ecc71'; // Grün für die In-Game Zeit
+                ctx.fillText(`Labor-Zeit: ${gH}:${gM} Uhr`, 20, startY + 160);
+
+                ctx.restore();
     }
 
-    // --- NEU: Score-Partikel zeichnen ---
-    if (typeof scoreParticles !== 'undefined') {
+
+// --- NEU: 2D Nacht-Overlay ---
+    const darknessWave = Math.cos(window.dayTime * Math.PI * 2);
+    const darkness = (darknessWave * 0.7) + 0.3;
+
+    if (darkness > 0.05) {
         ctx.save();
-        // Lighter-Blending macht sie strahlend wie kleine LEDs
-        ctx.globalCompositeOperation = 'lighter';
-        scoreParticles.forEach(sp => {
-            if (sp.delay <= 0) {
-                ctx.fillStyle = sp.color;
-                ctx.fillRect(sp.x - 3, sp.y - 3, 6, 6);
-            }
-        });
+        ctx.fillStyle = `rgba(5, 10, 25, ${darkness * 0.4})`; // (Oder 0.4, je nachdem was du gewählt hast)
+        ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
         ctx.restore();
     }
+
+    // --- NEU: 4. Durchlauf: Leuchtende Augen im Dunkeln ---
+    entities.forEach(e => {
+        if (e.type === 'animal') {
+            const cosA = Math.cos(e.angle);
+            const sinA = Math.sin(e.angle);
+
+            // Alle Augen sind jetzt strahlend weiß
+            ctx.fillStyle = 'white';
+
+            // Ein feiner Glow-Effekt, der nachts besonders gut zur Geltung kommt
+            //ctx.shadowBlur = 4;
+            ctx.shadowColor = 'white';
+
+            const eyeRadius = Math.max(1.5, e.size * 0.15);
+            const eyeLocalX = e.size * 0.4;
+            const eyeLocalY = e.size * 0.3;
+
+            const eye1X = e.x + eyeLocalX * cosA - (-eyeLocalY) * sinA;
+            const eye1Y = e.y + eyeLocalX * sinA + (-eyeLocalY) * cosA;
+
+            const eye2X = e.x + eyeLocalX * cosA - (eyeLocalY) * sinA;
+            const eye2Y = e.y + eyeLocalX * sinA + (eyeLocalY) * cosA;
+
+            ctx.beginPath();
+            ctx.arc(eye1X, eye1Y, eyeRadius, 0, Math.PI * 2);
+            ctx.arc(eye2X, eye2Y, eyeRadius, 0, Math.PI * 2);
+            ctx.fill();
+
+            // WICHTIG: Den Schatten-Effekt wieder ausschalten, sonst leuchtet alles!
+           // ctx.shadowBlur = 0;
+        }
+    });
 
     drawShopUI();
 }
