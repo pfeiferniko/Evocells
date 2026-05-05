@@ -8,7 +8,6 @@ window.SETTINGS = {
     STARTUP_PHASE_DURATION: 3000, // Millisekunden für die anfängliche "Schnellwachstum"-Phase der Pflanzen
     DAY_LENGTH_MS: 120000,
 
-
     // ==========================================
     // PUNKTE-SYSTEM (SCORE)
     // ==========================================
@@ -23,8 +22,8 @@ window.SETTINGS = {
     SPAWN_HERBIVORES: 70, // Startanzahl Pflanzenfresser
     SPAWN_CARNIVORES: 5,  // Startanzahl Fleischfresser
     SPAWN_SNAKES: 1,
-    SPAWN_SUPER_STONES: 2, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
-    SPAWN_NORMAL_STONES: 30, // Anzahl normale Steine
+    SPAWN_SUPER_STONES: 3, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
+    SPAWN_NORMAL_STONES: 50, // Anzahl normale Steine
 
     // ==========================================
     // POPULATIONS-GRENZEN (GEBURTENKONTROLLE)
@@ -75,11 +74,11 @@ window.SETTINGS = {
     // GENOME & MUTATION
     // ==========================================
     HERB_MAX_SIZE_BASE: 4,      // Start-Maximalgröße Pflanzenfresser
-    CARN_MAX_SIZE_BASE: 8,     // Start-Maximalgröße rote Jäger
-    SNAKE_MAX_SIZE_BASE: 7,     // Start-Maximalgröße Schlangen
+    CARN_MAX_SIZE_BASE: 7,     // Start-Maximalgröße rote Jäger
+    SNAKE_MAX_SIZE_BASE: 6,     // Start-Maximalgröße Schlangen
 
     MUTATION_SIZE_STEP: 2.0,    // Wie stark die Größe pro Mutation schwanken kann (Bereich: +/- 1.0)
-    MUTATION_MAX_SIZE_CAP: 10,  // Die absolute Obergrenze, die ein Tier durch Mutation erreichen kann
+    MUTATION_MAX_SIZE_CAP: 9,  // Die absolute Obergrenze, die ein Tier durch Mutation erreichen kann
 
     // ==========================================
     // GENOME BASIS-WERTE
@@ -135,7 +134,7 @@ window.SETTINGS = {
     // ==========================================
     CARN_BASE_SPEED: 1.3,
     CARN_SPEED_VARIANCE: 0.1, // Wird +/- dazugerechnet (1.2 bis 1.4)
-    CARN_MAX_REPRODUCTIONS: 2,
+    CARN_MAX_REPRODUCTIONS: 20,
     CARN_ENERGY_REQUIRED_REPRO: 0.9, // 90% der Maximalenergie
     CARN_MIN_AGE_REPRO: 600,
     CARN_REPRO_FRAMES: 90,
@@ -148,7 +147,7 @@ window.SETTINGS = {
     // SCHLANGEN (SNAKE)
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
-    SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
+    SNAKE_MAX_REPRODUCTIONS: 10, // Wie oft in ihrem LEBEN darf sie werfen?
     SNAKE_BASE_SPEED: 1.7,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
     SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown

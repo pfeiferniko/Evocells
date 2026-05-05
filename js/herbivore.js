@@ -22,13 +22,16 @@ class HerbivoreCell extends AnimalCell {
 
         if (allowGiant) {
             this.isGiant = true;
-            this.maxSize = 11;
+            this.maxSize = 9;
             this.size = 5;
             // Die Riesen leuchten auffällig Gold/Gelb, damit du sie sofort erkennst
             this.color = `rgb(255, 255, 0)`;
             this.dotColor = `rgb(0, 0, 0)`;
             this.maxReproductions = Infinity;
         }
+
+        this.tailLengthMultiplier = 0.8;
+        this.tailLengthOffset = -2;
     }
 
     update(staticGrid, dynamicGrid) {

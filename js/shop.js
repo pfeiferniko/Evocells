@@ -25,7 +25,7 @@ function drawShopUI() {
     SHOP_BTN.x = WORLD_WIDTH - 75;
 
     // Button leuchtet rot, wenn ein Modus aktiv ist (zum Abbrechen)
-    const isCancelState = isShopOpen || isPlacementMode || isDeleteMode;
+    const isCancelState = isShopOpen || isPlacementMode || isDeleteMode || window.trackedEntity;
 
     ctx.save();
     ctx.fillStyle = isCancelState ? '#ff5555' : 'rgba(255, 255, 255, 0.2)';
@@ -100,17 +100,20 @@ function drawShopWindow() {
 
 function handleShopClick(canvasX, canvasY) {
     // 1. Klick auf den Plus/X-Button
-    if (canvasX >= SHOP_BTN.x && canvasY <= SHOP_BTN.y + SHOP_BTN.h /*canvasX <= SHOP_BTN.x + SHOP_BTN.w &&
-        canvasY >= SHOP_BTN.y && */) {
+    if (canvasX >= SHOP_BTN.x && canvasX <= SHOP_BTN.x + SHOP_BTN.w &&
+            canvasY >= SHOP_BTN.y && canvasY <= SHOP_BTN.y + SHOP_BTN.h) {
 
-        if (isPlacementMode || isDeleteMode) {
-            isPlacementMode = false;
-            isDeleteMode = false;
-            pendingItem = null;
-        } else {
-            isShopOpen = !isShopOpen;
-        }
-        return true;
+            // Wenn irgendein Modus (Platzieren, Löschen ODER Tracking) aktiv ist -> ALLES BEENDEN
+            if (isPlacementMode || isDeleteMode || window.trackedEntity) {
+                isPlacementMode = false;
+                isDeleteMode = false;
+                pendingItem = null;
+                window.trackedEntity = null; // Beendet die Kameraverfolgung
+                isShopOpen = false;
+            } else {
+                isShopOpen = !isShopOpen;
+            }
+            return true;
     }
 
     // 2. Klick im Platzierungsmodus (irgendwo in der Welt)

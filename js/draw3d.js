@@ -21,6 +21,26 @@ let particlesInstancedMesh;
 let plantsInstancedMesh;
 let stonesInstancedMesh;
 
+// --- NEU: Kamera-Tracking Variablen ---
+const raycaster = new THREE.Raycaster();
+const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+let currentLookAt = new THREE.Vector3();
+let defaultCameraPos = new THREE.Vector3();
+let defaultLookAt = new THREE.Vector3();
+let isCameraInit = false;
+
+// Hilfsfunktion: Wandelt den 2D-Mausklick in 3D-Bodenkoordinaten um
+window.getClickTarget3D = function(ndcX, ndcY) {
+    if (!camera) return null;
+    raycaster.setFromCamera(new THREE.Vector2(ndcX, ndcY), camera);
+    const target = new THREE.Vector3();
+    raycaster.ray.intersectPlane(groundPlane, target);
+    if (target) {
+        return { x: target.x, y: target.z }; // Z-Achse in 3D ist Y-Achse im 2D-Grid
+    }
+    return null;
+};
+
 // --- PERFORMANCE OPTIMIERUNG 1: Globale Baupläne ---
 // Wir erstellen jede Form nur ein einziges Mal für die Grafikkarte
 const SHARED_GEOMETRIES = {
@@ -28,10 +48,10 @@ const SHARED_GEOMETRIES = {
     // Körper auf 12x12 (reicht für flüssige Rundung völlig aus)
     animalBody: new THREE.SphereGeometry(11, 12, 12),
     // Augen sind winzig, 6x6 reicht locker
-    eye: new THREE.SphereGeometry(2.5, 6, 6),
+    eye: new THREE.SphereGeometry(2.5, 5, 5),
     plant: new THREE.IcosahedronGeometry(12, 1),
     stone: new THREE.DodecahedronGeometry(15, 0),
-    tail: new THREE.SphereGeometry(10, 5, 5),
+    tail: new THREE.SphereGeometry(10, 8, 8),
     // Bei SHARED_GEOMETRIES:
     diamond: new THREE.OctahedronGeometry(12, 0), // Oktaeder ist die perfekte Diamantform!
     particle: new THREE.BoxGeometry(1, 1, 1)
@@ -60,10 +80,12 @@ function init3D() {
     camera.lookAt(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
 
     renderer = new THREE.WebGLRenderer({ canvas: canvas3D, antialias: true, alpha: true });
+    // --- NEU: Knackscharfe Auflösung auf modernen Monitoren ---
+    //renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(canvas3D.width, canvas3D.height, false);
 
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFShadowMap;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // 2. Umgebungslicht in der Variable speichern
     ambientLight = new THREE.AmbientLight(0x405060, 0.6);
@@ -86,8 +108,8 @@ function init3D() {
     light.shadow.camera.near = 10;
     light.shadow.camera.far = 2500;
 
-    light.shadow.mapSize.width = 1200;
-    light.shadow.mapSize.height = 1200;
+    light.shadow.mapSize.width = 1500;
+    light.shadow.mapSize.height = 1500;
     light.shadow.bias = -0.0005;
 
     scene.add(light);
@@ -134,6 +156,59 @@ function init3D() {
     initInstancedMeshes();
 }
 
+function updateTrackingCamera() {
+    if (!camera) return;
+
+    if (!isCameraInit) {
+        defaultCameraPos.copy(camera.position);
+        defaultLookAt.set(window.WORLD_WIDTH / 2, 0, window.WORLD_HEIGHT / 2);
+        currentLookAt.copy(defaultLookAt);
+        isCameraInit = true;
+
+        if (light && light.shadow) {
+            if (!light.target.parent) scene.add(light.target);
+            light.target.position.set(window.WORLD_WIDTH / 2, 0, window.WORLD_HEIGHT / 2);
+        }
+    }
+
+    if (window.trackedEntity && window.trackedEntity.alive) {
+        const e = window.trackedEntity;
+
+        const targetPos = new THREE.Vector3(e.x, 450, e.y + 1.0);
+        const targetLookAt = new THREE.Vector3(e.x, 0, e.y);
+
+        camera.position.lerp(targetPos, 0.06);
+        currentLookAt.lerp(targetLookAt, 0.06);
+        camera.lookAt(currentLookAt);
+
+        // SCHATTEN SCHARFSTELLEN
+        if (light && light.shadow) {
+             light.target.position.set(e.x, 0, e.y);
+             light.shadow.camera.left = -450;
+             light.shadow.camera.right = 450;
+             light.shadow.camera.top = 450;
+             light.shadow.camera.bottom = -450;
+             light.shadow.camera.updateProjectionMatrix();
+        }
+
+    } else {
+        // Kamera zurück zur Übersicht
+        camera.position.lerp(defaultCameraPos, 0.06);
+        currentLookAt.lerp(defaultLookAt, 0.06);
+        camera.lookAt(currentLookAt);
+
+        // SCHATTEN WIEDER GROSS MACHEN
+        if (light && light.shadow) {
+            light.target.position.set(window.WORLD_WIDTH / 2, 0, window.WORLD_HEIGHT / 2);
+            light.shadow.camera.left = -1500;
+            light.shadow.camera.right = 1500;
+            light.shadow.camera.top = 1500;
+            light.shadow.camera.bottom = -1500;
+            light.shadow.camera.updateProjectionMatrix();
+        }
+    }
+}
+
 // --- OPTIMIERTER 3D Tagesablauf (Original-Position mit leichtem Pendeln) ---
 function updateDayNight3D() {
     if (!light || !ambientLight) return;
@@ -143,9 +218,14 @@ function updateDayNight3D() {
 
     // 1. POSITION: Zurück zur Original-Ausrichtung (y = 200, z = -500)
     // Wandert nur leicht (z.B. +/- 400 Pixel) nach links und rechts
-    light.position.x = window.WORLD_WIDTH / 2 + Math.sin(window.dayTime * Math.PI * 2) * 400;
-    light.position.y = 200;
-    light.position.z = -500;
+    // 1. POSITION: Relativ zum Ziel (Target)!
+        // Damit bleiben die Schattenwinkel IMMER exakt gleich, egal wohin die Kamera schaut
+        const targetX = (light.target && light.target.position.x) ? light.target.position.x : (window.WORLD_WIDTH / 2);
+        const targetZ = (light.target && light.target.position.z) ? light.target.position.z : (window.WORLD_HEIGHT / 2);
+
+        light.position.x = targetX + Math.sin(window.dayTime * Math.PI * 2) * 400;
+        light.position.y = 200;
+        light.position.z = targetZ - 500;
 
     // 2. HAUPTLICHT:
     // Intensität schwankt sanft zwischen 0.8 (Nacht) und 2.0 (Tag - das war dein Originalwert)
@@ -245,6 +325,8 @@ function draw3D() {
     syncParticles();
 
     updateDayNight3D();
+
+    updateTrackingCamera();
 
     renderer.render(scene, camera);
     drawUIOverlay();
@@ -383,7 +465,15 @@ function syncEntities() {
                 updateTailColor(e, mesh);
             }
 
+            // Basis-Skalierung für 3D
             let s = e.size / 10;
+
+            // --- NEU: Nur den Kopf der Pflanzenfresser schrumpfen ---
+            // "instanceof HerbivoreCell" trifft NUR den Kopf. Schwänze werden ignoriert!
+            if (e instanceof HerbivoreCell) {
+                s = s * 0.6; // Kopf auf 70% der Größe
+            }
+
             mesh.scale.set(s, s, s);
         }
     });

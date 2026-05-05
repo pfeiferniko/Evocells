@@ -1,7 +1,20 @@
 function draw2D() {
     const currentTime = Date.now();
+
     ctx.fillStyle = '#000000';
-    ctx.fillRect(0, 0, WORLD_WIDTH, WORLD_HEIGHT);
+    ctx.fillRect(-WORLD_WIDTH, -WORLD_HEIGHT, WORLD_WIDTH*2, WORLD_HEIGHT*2);
+
+    ctx.save(); // Speicher den Standard-Zustand
+
+    if (window.trackedEntity && window.trackedEntity.alive) {
+        const zoom = 2.5; // Wie nah soll die Kamera ran?
+        // 1. In die Mitte des Bildschirms schieben
+        ctx.translate(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
+        // 2. Vergrößern
+        ctx.scale(zoom, zoom);
+        // 3. Die Welt so verschieben, dass das Tier im Zentrum steht
+        ctx.translate(-window.trackedEntity.x, -window.trackedEntity.y);
+    }
 
     // Ein leuchtendes, helles Cyan/Blaugrün
     ctx.fillStyle = '#1a4466';
@@ -190,27 +203,6 @@ function draw2D() {
                 ctx.stroke();
             }
 
-            // --- 3. DIE AUGEN ---
-            /*ctx.fillStyle = (e instanceof CarnivoreCell || e.isGiant) ? 'black' : 'white';
-            const eyeRadius = Math.max(1.5, e.size * 0.15);
-
-            const eyeLocalX = e.size * 0.4;
-            const eyeLocalY = e.size * 0.3;
-
-            // Linkes Auge (y ist negativ)
-            const eye1X = e.x + eyeLocalX * cosA - (-eyeLocalY) * sinA;
-            const eye1Y = e.y + eyeLocalX * sinA + (-eyeLocalY) * cosA;
-
-            // Rechtes Auge (y ist positiv)
-            const eye2X = e.x + eyeLocalX * cosA - (eyeLocalY) * sinA;
-            const eye2Y = e.y + eyeLocalX * sinA + (eyeLocalY) * cosA;
-
-            // Wir zeichnen beide Augen in einem einzigen Pfad!
-            ctx.beginPath();
-            ctx.arc(eye1X, eye1Y, eyeRadius, 0, Math.PI * 2);
-            ctx.arc(eye2X, eye2Y, eyeRadius, 0, Math.PI * 2);
-            ctx.fill();*/
-
             // --- Debug-Linien für Fluchtverhalten ---
             if (showDebugLines) {
                 if (e.threat && e.threat.alive) {
@@ -289,85 +281,9 @@ function draw2D() {
         ctx.fillRect(p.x - p.size, p.y - p.size, p.size * 2, p.size * 2);
     });
 
-    /*if (!window.isDemoMode) {
-        ctx.save();
 
-        // --- NEU: Dynamische Schriftgröße ---
-        // Basis-Größe ist 20. Wenn ein Punkt ankommt, ploppt es auf 28 hoch (+8).
-        const currentFontSize = 20 + (window.scorePulse * 8);
-        ctx.font = `bold ${currentFontSize}px sans-serif`;
 
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
 
-        const scoreText = `Punkte: ${simScore}`;
-
-        // --- NEU: Textbreite cachen! ---
-        if (window.cachedScore !== simScore) {
-            window.cachedTextWidth = ctx.measureText(scoreText).width;
-            window.cachedScore = simScore;
-        }
-
-        const boxHeight = 40 + ((window.scorePulse || 0) * 4);
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-        // Jetzt nutzen wir den zwischengespeicherten Wert!
-        ctx.fillRect(10, 10, window.cachedTextWidth + 30, boxHeight);
-
-        // Schicke Gold/Gelbe Schrift für die Punkte
-        ctx.fillStyle = '#FFD700';
-        ctx.fillText(scoreText, 25, 20);
-
-        ctx.restore();
-    }*/
-
-    // --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
-    if (showFps) {
-        ctx.save();
-                ctx.font = '16px sans-serif';
-                ctx.textAlign = 'left';
-                ctx.textBaseline = 'top';
-
-                // 1. Zeiten berechnen
-                // Reale Laufzeit
-                const runSec = Math.floor((Date.now() - startTime) / 1000);
-                const rH = Math.floor(runSec / 3600).toString().padStart(2, '0');
-                const rM = Math.floor((runSec % 3600) / 60).toString().padStart(2, '0');
-                const rS = (runSec % 60).toString().padStart(2, '0');
-
-                // Labor-Zeit (In-Game)
-                const totalGameMin = Math.floor((window.dayTime || 0) * 24 * 60);
-                const gH = Math.floor(totalGameMin / 60).toString().padStart(2, '0');
-                const gM = (totalGameMin % 60).toString().padStart(2, '0');
-
-                // 2. Box zeichnen (Höher gemacht für die neuen Einträge)
-                const boxHeight = 185; // Vorher 135
-                const startY = WORLD_HEIGHT - boxHeight - 10;
-
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-                ctx.fillRect(10, startY, 220, boxHeight);
-
-                // 3. Texte zeichnen
-                ctx.fillStyle = 'white';
-                ctx.fillText(`FPS: ${currentFps}`, 20, startY + 10);
-                ctx.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
-                ctx.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
-
-                ctx.fillStyle = '#f1c40f'; // Gelblich für Pflanzenfresser
-                ctx.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
-
-                ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
-                ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
-
-                // --- NEU: Die Zeiten ---
-                ctx.fillStyle = '#3498db'; // Blau für die echte Laufzeit
-                ctx.fillText(`Laufzeit: ${rH}:${rM}:${rS}`, 20, startY + 135);
-
-                ctx.fillStyle = '#2ecc71'; // Grün für die In-Game Zeit
-                ctx.fillText(`Labor-Zeit: ${gH}:${gM} Uhr`, 20, startY + 160);
-
-                ctx.restore();
-    }
 
 
 // --- NEU: 2D Nacht-Overlay ---
@@ -414,5 +330,58 @@ function draw2D() {
         }
     });
 
+    ctx.restore();
+
+    drawPerformance2D();
     drawShopUI();
+}
+
+function drawPerformance2D() {
+// --- NEU: PERFORMANCE- UND INFO-ANZEIGE ---
+    if (showFps) {
+        ctx.save();
+        ctx.font = '16px sans-serif';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        // 1. Zeiten berechnen
+        // Reale Laufzeit
+        const runSec = Math.floor((Date.now() - startTime) / 1000);
+        const rH = Math.floor(runSec / 3600).toString().padStart(2, '0');
+                const rM = Math.floor((runSec % 3600) / 60).toString().padStart(2, '0');
+                const rS = (runSec % 60).toString().padStart(2, '0');
+
+                // Labor-Zeit (In-Game)
+                const totalGameMin = Math.floor((window.dayTime || 0) * 24 * 60);
+                const gH = Math.floor(totalGameMin / 60).toString().padStart(2, '0');
+                const gM = (totalGameMin % 60).toString().padStart(2, '0');
+
+                // 2. Box zeichnen (Höher gemacht für die neuen Einträge)
+                const boxHeight = 185; // Vorher 135
+                const startY = WORLD_HEIGHT - boxHeight - 10;
+
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                ctx.fillRect(10, startY, 220, boxHeight);
+
+                // 3. Texte zeichnen
+                ctx.fillStyle = 'white';
+                ctx.fillText(`FPS: ${currentFps}`, 20, startY + 10);
+                ctx.fillText(`Process: ${Math.round(currentProcessTime)} ms`, 20, startY + 35);
+                ctx.fillText(`Alle Objekte: ${entities.length}`, 20, startY + 60);
+
+                ctx.fillStyle = '#f1c40f'; // Gelblich für Pflanzenfresser
+                ctx.fillText(`Pflanzenfresser: ${globalHerbivoreCount}`, 20, startY + 85);
+
+                ctx.fillStyle = '#e74c3c'; // Rötlich für Fleischfresser
+                ctx.fillText(`Fleischfresser: ${globalCarnivoreCount}`, 20, startY + 110);
+
+                // --- NEU: Die Zeiten ---
+                ctx.fillStyle = '#3498db'; // Blau für die echte Laufzeit
+                ctx.fillText(`Laufzeit: ${rH}:${rM}:${rS}`, 20, startY + 135);
+
+                ctx.fillStyle = '#2ecc71'; // Grün für die In-Game Zeit
+                ctx.fillText(`Labor-Zeit: ${gH}:${gM} Uhr`, 20, startY + 160);
+
+                ctx.restore();
+    }
 }

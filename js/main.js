@@ -247,104 +247,52 @@ uiCanvas.addEventListener('mousedown', (e) => {
     const clickX = (e.clientX - rect.left) * scaleX / factor;
     const clickY = (e.clientY - rect.top) * scaleY / factor;
 
-    // Der Shop prüft, ob das Plus oder ein Item getroffen wurde
+    // 1. Shop-Check
     const consumed = handleShopClick(clickX, clickY);
+    if (consumed) return;
 
-    if (!consumed) {
-
-        // --- NEU: LÖSCH-MODUS LOGIK ---
-        if (typeof isDeleteMode !== 'undefined' && isDeleteMode) {
-            // Wir suchen das nächste Element im Umkreis des Klicks
-            let target = null;
-            let minDist = 30; // Toleranz-Radius für das Treffen kleiner Objekte
-
-            for (let i = 0; i < entities.length; i++) {
-                const ent = entities[i];
-                // Wir löschen nur Köpfe, Pflanzen und Steine (Schwänze verschwinden mit dem Tier)
-                if (ent.type === 'animal' || ent.type === 'plant' || ent.type === 'stone') {
-                    const dx = ent.x - clickX;
-                    const dy = ent.y - clickY;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-
-                    if (dist < (ent.size || 5) + 15 && dist < minDist) {
-                        target = ent;
-                        minDist = dist;
-                    }
-                }
-            }
-
-            if (target) {
-                // Aus den Grids entfernen
-                if (target.type === 'plant' || target.type === 'stone') {
-                    staticGrid.remove(target);
-                }
-
-                // Tier und Schwanz markieren
-                target.alive = false;
-                if (target.tailSegments) {
-                    target.tailSegments.forEach(t => t.alive = false);
-                }
-
-                // Effekt beim Löschen
-                createParticles(target.x, target.y, '#ffffff', 10, 2);
-            }
-            return; // Klick ist verarbeitet
-        }
-
-        // --- NEU: Diamanten einsammeln ---
-        for (let i = 0; i < entities.length; i++) {
-            const ent = entities[i];
-
-            // WICHTIG: !ent.isCollected hinzufügen, damit man nicht 100x draufklicken kann!
-            if (ent.type === 'diamond' && ent.alive && !ent.isCollected) {
-                const dx = ent.x - clickX;
-                const dy = ent.y - clickY;
-
-                const hitRadius = ent.size + 25;
-
-                if (dx * dx + dy * dy < hitRadius * hitRadius) {
-
-                    // --- NEU: Nicht sofort töten, sondern Timer starten! ---
-                    ent.isCollected = true;
-                    ent.collectionTimer = 90; // Deine 90 Frames!
-                    ent.originalSize = ent.size; // Wir merken uns die Startgröße fürs Schrumpfen
-
-                    // WICHTIG: ent.alive = false und staticGrid.remove(ent)
-                    // werden HIER gelöscht, das machen wir später im Update!
-
-                    // --- Punkte-Partikel Perlenkette ---
-                    if (typeof scoreParticles !== 'undefined') {
-                        const pCount = Math.min(ent.points, 1000);
-
-                        const targetX = 50;
-                        const targetY = 30;
-
-                        const ctrlX = ent.x + (targetX - ent.x) * 0.4;
-                        const ctrlY = Math.min(ent.y, targetY) - 20;
-
-                        // Du meintest, du hast es auf 90 gestellt:
-                        let delayStep = 90 / pCount;
-                        if (delayStep > 15) delayStep = 15;
-
-                        for (let j = 0; j < pCount; j++) { // j statt i nutzen, da i schon in der äußeren Schleife ist
-                            scoreParticles.push({
-                                startX: ent.x,
-                                startY: ent.y,
-                                ctrlX: ctrlX,
-                                ctrlY: ctrlY,
-                                targetX: targetX,
-                                targetY: targetY,
-                                color: ent.color || '#f1c40f',
-                                progress: 0,
-                                speed: 0.002,
-                                delay: Math.floor(j * delayStep)
-                            });
-                        }
-                    }
-                    break; // Immer nur 1 Diamant pro Klick
+    // 2. Lösch-Modus
+    if (typeof isDeleteMode !== 'undefined' && isDeleteMode) {
+        let target = null;
+        let minDist = 30;
+        for (let ent of entities) {
+            if (ent.type === 'animal' || ent.type === 'plant' || ent.type === 'stone') {
+                const dist = Math.sqrt((ent.x - clickX)**2 + (ent.y - clickY)**2);
+                if (dist < (ent.size || 5) + 15 && dist < minDist) {
+                    target = ent;
+                    minDist = dist;
                 }
             }
         }
+        if (target) {
+            if (target.type === 'plant' || target.type === 'stone') staticGrid.remove(target);
+            target.alive = false;
+            if (target.tailSegments) target.tailSegments.forEach(t => t.alive = false);
+            createParticles(target.x, target.y, '#ffffff', 10, 2);
+        }
+        return;
+    }
+
+
+    // 3. NEU: Tier-Tracking
+    // --- NEU: Wenn bereits ein Tier verfolgt wird, ignoriere weitere Klicks auf Tiere ---
+    if (window.trackedEntity) return;
+
+    let closestAnimal = null;
+    let animDist = 50; // Klick-Toleranz
+
+    for (let ent of entities) {
+        if (ent.type === 'animal' && ent.alive) {
+            const dist = Math.sqrt((ent.x - clickX)**2 + (ent.y - clickY)**2);
+            if (dist < animDist) {
+                closestAnimal = ent;
+                animDist = dist;
+            }
+        }
+    }
+
+    if (closestAnimal) {
+        window.trackedEntity = closestAnimal;
     }
 });
 
@@ -540,6 +488,11 @@ function addInitialTail(animal, targetArray, length = 3) {
 }
 
 function update() {
+
+    if (window.trackedEntity && !window.trackedEntity.alive) {
+        window.trackedEntity = null;
+    }
+
     dynamicGrid.clear();
     entities.forEach(e => {
         if (e.type === 'animal') {
@@ -641,13 +594,25 @@ function update() {
                 let numChildren;
 
                 if (e instanceof HerbivoreCell) {
+                    // 1. Aktuelle Anzahl der Pflanzenfresser zählen
                     const herbivoreCount = globalHerbivoreCount;
 
-                    if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
-                        numChildren = 0;
+                    if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_START) {
+                        numChildren = 30;
+                    } else if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX) {
+                        // Bereich 30 bis 100: Von 10 runter auf 1 Kind
+                        const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
+                        numChildren = 30 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
                     } else {
-                        numChildren = 1;
+                        if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
+                            numChildren = 0;
+                        } else {
+                            numChildren = 1;
+                        }
                     }
+
+                    // Da wir keine halben Kinder haben können:
+                    numChildren = Math.round(numChildren);
                 } else if (e instanceof SnakeCell) {
                     numChildren = window.SETTINGS.SNAKE_LITTER_SIZE;
                 } else {
