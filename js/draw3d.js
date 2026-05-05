@@ -184,9 +184,20 @@ function updateTrackingCamera() {
                 zoomHeight = 400 / aspect;
             }
 
-            // Kamera-Position mit der neuen zoomHeight
-            const targetPos = new THREE.Vector3(e.x, zoomHeight, e.y + 1.0);
-            const targetLookAt = new THREE.Vector3(e.x, 0, e.y);
+                // 2. Sichtbaren Bereich berechnen (Trigonometrie für FOV 45)
+                // Wie viel Welt sieht die Kamera von der Mitte bis zum oberen Rand?
+                const fovRad = (camera.fov * Math.PI) / 180;
+                const halfVisibleHeight = Math.tan(fovRad / 2) * zoomHeight;
+                const halfVisibleWidth = halfVisibleHeight * aspect;
+
+                // 3. Ziel-Koordinaten begrenzen (Clamping)
+                // Wir lassen die Kamera nie näher an den Rand als halfVisibleWidth/Height
+                const targetX = Math.max(halfVisibleWidth, Math.min(window.WORLD_WIDTH - halfVisibleWidth, e.x));
+                const targetZ = Math.max(halfVisibleHeight, Math.min(window.WORLD_HEIGHT - halfVisibleHeight, e.y));
+
+                // 4. Positionen setzen
+                const targetPos = new THREE.Vector3(targetX, zoomHeight, targetZ + 1.0);
+                const targetLookAt = new THREE.Vector3(targetX, 0, targetZ);
 
             camera.position.lerp(targetPos, 0.1);
             currentLookAt.lerp(targetLookAt, 0.1);

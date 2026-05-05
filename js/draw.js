@@ -9,11 +9,17 @@ function draw2D() {
     if (window.trackedEntity && window.trackedEntity.alive) {
         const zoom = 3; // Wie nah soll die Kamera ran?
         // 1. In die Mitte des Bildschirms schieben
-        ctx.translate(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
-        // 2. Vergrößern
+
+        const halfVisibleWidth = (window.WORLD_WIDTH / zoom) / 2;
+        const halfVisibleHeight = (window.WORLD_HEIGHT / zoom) / 2;
+
+        // Kamera-Mitte berechnen und begrenzen
+        const camX = Math.max(halfVisibleWidth, Math.min(window.WORLD_WIDTH - halfVisibleWidth, window.trackedEntity.x));
+        const camY = Math.max(halfVisibleHeight, Math.min(window.WORLD_HEIGHT - halfVisibleHeight, window.trackedEntity.y));
+
+        ctx.translate(window.WORLD_WIDTH / 2, window.WORLD_HEIGHT / 2);
         ctx.scale(zoom, zoom);
-        // 3. Die Welt so verschieben, dass das Tier im Zentrum steht
-        ctx.translate(-window.trackedEntity.x, -window.trackedEntity.y);
+        ctx.translate(-camX, -camY);
     }
 
     // Ein leuchtendes, helles Cyan/Blaugrün
