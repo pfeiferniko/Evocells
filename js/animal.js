@@ -708,15 +708,19 @@ class AnimalCell extends BaseCell {
         }
     }
 
-    // NEU: Bekommt jetzt ein ARRAY von Gefahren ('threats') anstelle von einem einzigen 'threat'
     flee(threats, grid) {
         this.target = null;
         this.targetTimer = 0;
 
         let combinedFleeX = 0;
         let combinedFleeY = 0;
+        let totalForce = 0; // NEU: Summe aller Ängste speichern
 
-        // 1. Alle Fluchtvektoren addieren (gewichtet nach Distanz)
+        let closestDistSq = Infinity;
+        let closestDx = 0;
+        let closestDy = 0;
+
+        // 1. Alle Fluchtvektoren berechnen
         for (const threat of threats) {
             const dx = this.x - threat.x;
             const dy = this.y - threat.y;
@@ -725,31 +729,75 @@ class AnimalCell extends BaseCell {
             if (distSq > 0) {
                 const dist = Math.sqrt(distSq);
 
-                // Je näher der Jäger, desto panischer der Drang, genau IHM auszuweichen
-                // Die 100 ist ein Multiplikator, der die Kraft schön weich skaliert
-                const force = 100 / dist;
+                // Exponentielle Angst: Je näher, desto brutaler die Abstoßung
+                const force = 2000 / distSq;
 
-                combinedFleeX += (dx / dist) * force;
-                combinedFleeY += (dy / dist) * force;
+                const fX = (dx / dist) * force;
+                const fY = (dy / dist) * force;
+
+                combinedFleeX += fX;
+                combinedFleeY += fY;
+                totalForce += force; // Gesamtdruck auf das Tier aufsummieren
+
+                // Den gefährlichsten (nächsten) Räuber für den Notausweg merken
+                if (distSq < closestDistSq) {
+                    closestDistSq = distSq;
+                    closestDx = dx / dist;
+                    closestDy = dy / dist;
+                }
             }
         }
 
-        // 2. Idealer Fluchtwinkel aus der GEMEINSAMEN Summe berechnen
-        // Die atan2 Funktion macht aus den X/Y Werten wieder einen perfekten Winkel
-        const idealFleeAngle = Math.atan2(combinedFleeY, combinedFleeX);
+        // 3. Vektorlänge (Mag) der RESULTIERENDEN Fluchtrichtung berechnen
+        const mag = Math.sqrt(combinedFleeX * combinedFleeX + combinedFleeY * combinedFleeY);
 
-        // 3. Zielpunkt setzen (stur in diese berechnete, optimale Richtung)
+        let idealDx = 0;
+        let idealDy = 0;
+
+        // --- DER "ZANGENANGRIFF" FIX (Nasse Seife) ---
+        // Wenn sich die Kräfte der Feinde (oder Wand + Feind) fast komplett aufheben:
+        // (Mag ist sehr klein, obwohl die TotalForce hoch ist)
+        if (mag < totalForce * 0.4 && closestDistSq !== Infinity) {
+
+            // Wir stecken in der Falle! 90-Grad Ausbruchs-Winkel zum nächsten Feind berechnen
+            idealDx = -closestDy;
+            idealDy = closestDx;
+
+            // Logik: Wir nehmen die 90-Grad-Seite, die unserer aktuellen Schwimmrichtung ähnlicher ist
+            if (this.fleeDirX !== undefined) {
+                if ((idealDx * this.fleeDirX + idealDy * this.fleeDirY) < 0) {
+                    idealDx = -idealDx; // Fluchtrichtung umdrehen
+                    idealDy = -idealDy;
+                }
+            }
+        } else if (mag > 0) {
+            // Normale, klare Fluchtrichtung (Kräfte heben sich nicht auf)
+            idealDx = combinedFleeX / mag;
+            idealDy = combinedFleeY / mag;
+        }
+
+        // --- DER "KREISLAUF & ZAPPEL" FIX ---
+        if (this.fleeDirX === undefined) {
+            this.fleeDirX = idealDx;
+            this.fleeDirY = idealDy;
+        }
+
+        // Trägheit auf 30% Anpassung gesetzt. Das filtert 1-Frame-Zittern komplett raus,
+        // macht die Tiere aber wendig genug, damit sie keine riesigen Schleifen schwimmen.
+        this.fleeDirX = this.fleeDirX * 0.7 + idealDx * 0.3;
+        this.fleeDirY = this.fleeDirY * 0.7 + idealDy * 0.3;
+
+        const idealFleeAngle = Math.atan2(this.fleeDirY, this.fleeDirX);
+
+        // Fluchtziel tief in den Raum setzen, damit sie mit Vollgas schwimmen
         const fleeTarget = {
-            x: this.x + Math.cos(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE,
-            y: this.y + Math.sin(idealFleeAngle) * window.SETTINGS.FLEE_TARGET_DISTANCE
+            x: this.x + Math.cos(idealFleeAngle) * 100,
+            y: this.y + Math.sin(idealFleeAngle) * 100
         };
 
         this.currentFleeTarget = fleeTarget;
 
-        // 4. Mikro-Navigation (Ausweichen): Hindernisse laden
         const avoidEntities = grid.getEntitiesInArea(this.x, this.y, 60);
-
-        // 5. Loslaufen!
         this.move(fleeTarget, true, avoidEntities);
     }
 }

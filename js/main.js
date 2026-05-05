@@ -511,7 +511,7 @@ function update() {
             if (ent instanceof HerbivoreCell) {
                 globalHerbivoreCount++;
                 if (ent.isGiant) globalGiantCount++; // --- NEU: Riesen mitzählen ---
-            } else if (ent instanceof CarnivoreCell && !(ent instanceof SnakeCell)) {
+            } else if (ent instanceof CarnivoreCell) {
                 globalCarnivoreCount++;
             } else if (ent.type === 'plant') {
                 globalPlantCount++;
@@ -1026,7 +1026,7 @@ function update() {
 
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
-               /* if (!e.isEaten && e.reproductionCount < e.maxReproductions) { // && Math.random() > 0.7
+                if (!e.isEaten ) { // && Math.random() > 0.7 && e.reproductionCount < e.maxReproductions
 
                     // NEU: Farbe des Tiers auslesen (z.B. aus "rgb(200, 100, 50)" die Zahlen holen)
                     const rgbMatch = e.color.match(/\d+/g);
@@ -1040,11 +1040,12 @@ function update() {
                         };
                     }
 
-                    const superPlant = new PlantSegment(e.x, e.y, null, true, animalBaseColor);
-                    superPlant.isTip = true;
-                    newEntities.push(superPlant);
-                    staticGrid.add(superPlant);
-                }*/
+                    const plant = new PlantSegment(e.x, e.y, null, false, animalBaseColor);
+                    plant.isTip = false;
+                    plant.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL * 0.75;
+                    newEntities.push(plant);
+                    staticGrid.add(plant);
+                }
 
                 isAlive = false;
                 e.alive = false;

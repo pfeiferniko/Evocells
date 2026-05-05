@@ -47,7 +47,9 @@ class CarnivoreCell extends AnimalCell {
         // }
 
         // Wir berechnen den Aggro-Radius zuerst, da er die Basis für alles andere ist
-        const aggroRadius = this.size * 4 + 50;
+        // Wir berechnen den Aggro-Radius zuerst, da er die Basis für alles andere ist
+        // NEU: Multipliziert mit dem Wert aus den Settings!
+        const aggroRadius = (this.size * 4 + 50) * window.SETTINGS.CARN_AGGRO_RADIUS_MULTIPLIER;
 
         // --- NEU: Fluchtradius gekoppelt an Aggro-Radius ---
         // Er sieht die Bedrohung nun DEUTLICH weiter weg (wird in den Settings eingestellt)
@@ -79,7 +81,7 @@ class CarnivoreCell extends AnimalCell {
                 e.size > this.size &&
                 !e.isResting &&
                 e.reproductionCount < e.maxReproductions &&
-                (e.target === this || previousThreat === e || this.isAdult())
+                (e.target === this || previousThreat === e)
             );
 
             let activeThreats = [];
@@ -90,7 +92,8 @@ class CarnivoreCell extends AnimalCell {
                 const dist = Math.sqrt(dx * dx + dy * dy);
 
                 if (dist <= panicRadius) {
-                    if (this.hasLineOfSight(p, localObstacles)) {
+                    // --- DER FIX: Objektpermanenz auch für kleine Räuber ---
+                    if (this.hasLineOfSight(p, localObstacles) || p === previousThreat) {
                         activeThreats.push(p);
                     }
                 }
@@ -147,7 +150,7 @@ class CarnivoreCell extends AnimalCell {
                     e instanceof CarnivoreCell &&
                     e.alive &&
                     e !== this &&
-                    e.size >= e.maxSize * 0.85 && // Geändert auf e.maxSize
+                    (e.isAdult() || e.constructor !== this.constructor) &&
                     e.size <= this.size &&
                     e.size >= this.size * 0.7
                 );

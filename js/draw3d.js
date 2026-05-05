@@ -11,15 +11,14 @@ let particleMeshes = new Map(); // Für die Fress-Krümel/Todes-Partikel
 const MAX_PARTICLES = 3000;
 const MAX_PLANTS = 2000;
 const MAX_STONES = 500;
-
-const MAX_DIAMONDS = 300;
-let diamondsInstancedMesh;
+const MAX_TAILS = 5000;
 
 let lastRenderedStoneCount = -1;
 
 let particlesInstancedMesh;
 let plantsInstancedMesh;
 let stonesInstancedMesh;
+let tailsInstancedMesh;
 
 // --- NEU: Kamera-Tracking Variablen ---
 const raycaster = new THREE.Raycaster();
@@ -52,8 +51,6 @@ const SHARED_GEOMETRIES = {
     plant: new THREE.IcosahedronGeometry(12, 1),
     stone: new THREE.DodecahedronGeometry(15, 0),
     tail: new THREE.SphereGeometry(10, 8, 8),
-    // Bei SHARED_GEOMETRIES:
-    diamond: new THREE.OctahedronGeometry(12, 0), // Oktaeder ist die perfekte Diamantform!
     particle: new THREE.BoxGeometry(3, 3, 3)
 };
 
@@ -93,20 +90,20 @@ function init3D() {
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
     light = new THREE.DirectionalLight(0xe0f0ff, 2);
-    light.position.set(WORLD_WIDTH / 2, 200, -500);
+    light.position.set(WORLD_WIDTH / 2, 800, -2000);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
 
     light.castShadow = true;
 
-    const dX = WORLD_WIDTH;
-    const dY = WORLD_HEIGHT;
+    const dX = WORLD_WIDTH/1.9;
+    const dY = WORLD_HEIGHT/1.9;
     light.shadow.camera.left = -dX;
     light.shadow.camera.right = dX;
     light.shadow.camera.top = dY;
     light.shadow.camera.bottom = -dY;
     light.shadow.camera.near = 10;
-    light.shadow.camera.far = 2500;
+    light.shadow.camera.far = 6000;
 
     light.shadow.mapSize.width = 1500;
     light.shadow.mapSize.height = 1500;
@@ -222,10 +219,12 @@ function updateTrackingCamera() {
         // SCHATTEN WIEDER GROSS MACHEN
         if (light && light.shadow) {
             light.target.position.set(window.WORLD_WIDTH / 2, 0, window.WORLD_HEIGHT / 2);
-            light.shadow.camera.left = -1500;
-            light.shadow.camera.right = 1500;
-            light.shadow.camera.top = 1500;
-            light.shadow.camera.bottom = -1500;
+            const dX = WORLD_WIDTH/1.9;
+            const dY = WORLD_HEIGHT/1.9;
+            light.shadow.camera.left = -dX;
+            light.shadow.camera.right = dX;
+            light.shadow.camera.top = dY;
+            light.shadow.camera.bottom = -dY;
             light.shadow.camera.updateProjectionMatrix();
         }
     }
@@ -238,16 +237,14 @@ function updateDayNight3D() {
     // timePhase schwingt sanft von 0.0 (Mitternacht) bis 1.0 (Mittag)
     const timePhase = (Math.cos(window.dayTime * Math.PI * 2) * -1 + 1) / 2;
 
-    // 1. POSITION: Zurück zur Original-Ausrichtung (y = 200, z = -500)
-    // Wandert nur leicht (z.B. +/- 400 Pixel) nach links und rechts
     // 1. POSITION: Relativ zum Ziel (Target)!
-        // Damit bleiben die Schattenwinkel IMMER exakt gleich, egal wohin die Kamera schaut
-        const targetX = (light.target && light.target.position.x) ? light.target.position.x : (window.WORLD_WIDTH / 2);
-        const targetZ = (light.target && light.target.position.z) ? light.target.position.z : (window.WORLD_HEIGHT / 2);
+    const targetX = (light.target && light.target.position.x) ? light.target.position.x : (window.WORLD_WIDTH / 2);
+    const targetZ = (light.target && light.target.position.z) ? light.target.position.z : (window.WORLD_HEIGHT / 2);
 
-        light.position.x = targetX + Math.sin(window.dayTime * Math.PI * 2) * 400;
-        light.position.y = 200;
-        light.position.z = targetZ - 500;
+    // X, Y und Z-Offset mal 4 genommen! Der Sonnen-Winkel bleibt dadurch absolut identisch.
+    light.position.x = targetX + Math.sin(window.dayTime * Math.PI * 2) * 1600;
+    light.position.y = 800;
+    light.position.z = targetZ - 2000;
 
     // 2. HAUPTLICHT:
     // Intensität schwankt sanft zwischen 0.8 (Nacht) und 2.0 (Tag - das war dein Originalwert)
@@ -281,7 +278,8 @@ function initInstancedMeshes() {
     const particleMat = new THREE.MeshPhongMaterial({ color: 0xffffff, flatShading: true });
     particlesInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.particle, particleMat, MAX_PARTICLES);
     particlesInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    particlesInstancedMesh.castShadow = true; // Wie gewünscht beibehalten
+    particlesInstancedMesh.castShadow = false;
+    particlesInstancedMesh.receiveShadow = false;
     scene.add(particlesInstancedMesh);
 
     // Pflanzen
@@ -289,6 +287,7 @@ function initInstancedMeshes() {
     plantsInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.plant, plantMat, MAX_PLANTS);
     plantsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     plantsInstancedMesh.castShadow = true;
+    plantsInstancedMesh.receiveShadow = false;
     scene.add(plantsInstancedMesh);
 
     // Steine
@@ -296,22 +295,24 @@ function initInstancedMeshes() {
     stonesInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.stone, stoneMat, MAX_STONES);
     stonesInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     stonesInstancedMesh.castShadow = true;
+    stonesInstancedMesh.receiveShadow = false;
     scene.add(stonesInstancedMesh);
 
-    // Diamanten
-    const diamondMat = new THREE.MeshPhongMaterial({ color: 0xffffff, shininess: 100, flatShading: true });
-    diamondsInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.diamond, diamondMat, MAX_DIAMONDS);
-    diamondsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    diamondsInstancedMesh.castShadow = true;
-    scene.add(diamondsInstancedMesh);
+    // NEU: Schwänze als InstancedMesh
+    const tailMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
+    tailsInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.tail, tailMat, MAX_TAILS);
+    tailsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    tailsInstancedMesh.castShadow = true; // Schwänze dürfen Schatten werfen
+    scene.add(tailsInstancedMesh);
 
     // --- BUGFIX: Farb-Puffer für die Grafikkarte erzwingen ---
-        // Wenn die Welt leer startet, muss die Engine trotzdem wissen,
-        // dass diese Objekte später individuelle Farben bekommen.
-        const dummyColor = new THREE.Color(0xffffff);
-        if (plantsInstancedMesh) plantsInstancedMesh.setColorAt(0, dummyColor);
-        if (stonesInstancedMesh) stonesInstancedMesh.setColorAt(0, dummyColor);
-        if (particlesInstancedMesh) particlesInstancedMesh.setColorAt(0, dummyColor);
+    // Wenn die Welt leer startet, muss die Engine trotzdem wissen,
+    // dass diese Objekte später individuelle Farben bekommen.
+    const dummyColor = new THREE.Color(0xffffff);
+    if (plantsInstancedMesh) plantsInstancedMesh.setColorAt(0, dummyColor);
+    if (stonesInstancedMesh) stonesInstancedMesh.setColorAt(0, dummyColor);
+    if (particlesInstancedMesh) particlesInstancedMesh.setColorAt(0, dummyColor);
+    if (tailsInstancedMesh) tailsInstancedMesh.setColorAt(0, dummyColor);
 }
 
 function initPlankton3D() {
@@ -328,7 +329,7 @@ function initPlankton3D() {
 
     // Plankton soll Schatten werfen und empfangen für maximale Tiefe
     planktonMesh.castShadow = true;
-    planktonMesh.receiveShadow = true;
+    planktonMesh.receiveShadow = false;
 
     scene.add(planktonMesh);
 }
@@ -409,6 +410,7 @@ function syncEntities() {
     let plantCount = 0;
     let stoneCount = 0;
     let diamondCount = 0;
+    let tailCount = 0; // NEU: Zähler für Schwanzsegmente
 
     entities.forEach(e => {
         if (!e.alive) return;
@@ -417,133 +419,126 @@ function syncEntities() {
             if (plantCount < MAX_PLANTS) {
                 const pulse = 1.0 + Math.sin((Date.now() * e.pulseSpeed) + e.pulseOffset) * 0.1;
                 const s = (e.size / 10) * pulse;
-
                 _dummy.position.set(e.x, 0, e.y);
                 _dummy.scale.set(s, s, s);
                 _dummy.rotation.set(0, 0, 0);
                 _dummy.updateMatrix();
-
                 plantsInstancedMesh.setMatrixAt(plantCount, _dummy.matrix);
                 _tempColor.set(e.color || '#ffffff');
                 plantsInstancedMesh.setColorAt(plantCount, _tempColor);
-
                 plantCount++;
             }
         } else if (e.type === 'stone') {
-            // Steine werden nur gezählt, Matrix-Updates machen wir unten!
-            if (stoneCount < MAX_STONES) {
-                stoneCount++;
-            }
+            if (stoneCount < MAX_STONES) stoneCount++;
         } else if (e.type === 'diamond') {
             if (diamondCount < MAX_DIAMONDS) {
-                // Schrumpft, wenn die Zeit abläuft
                 const shrink = e.life < e.maxLife * 0.3 ? Math.max(0.01, e.life / (e.maxLife * 0.3)) : 1.0;
                 const pulse = 1.0 + Math.sin(Date.now() * 0.005) * 0.1;
                 const s = (e.size / 10) * pulse * shrink;
-
-                // Eleganter Schwebe-Effekt (auf und ab)
                 const hoverY = -2 + Math.sin(Date.now() * 0.003 + e.x) * 3;
-
                 _dummy.position.set(e.x, hoverY, e.y);
                 _dummy.scale.set(s, s, s);
                 _dummy.rotation.set(0, e.angle, 0);
                 _dummy.updateMatrix();
-
                 diamondsInstancedMesh.setMatrixAt(diamondCount, _dummy.matrix);
-
                 _tempColor.set(e.color);
                 diamondsInstancedMesh.setColorAt(diamondCount, _tempColor);
-
                 diamondCount++;
             }
-        } else {
-            // --- TIERE UND SCHWÄNZE (Object Pooling) ---
+        } else if (e.type === 'tail') {
+            // NEU: Schwanzsegmente in das InstancedMesh packen
+            if (tailCount < MAX_TAILS) {
+                _dummy.position.set(e.x, -4, e.y);
+                _dummy.scale.set(e.size / 10, e.size / 10, e.size / 10);
+                _dummy.rotation.set(0, 0, 0);
+                _dummy.updateMatrix();
+                tailsInstancedMesh.setMatrixAt(tailCount, _dummy.matrix);
+
+                // Energie-Farben Logik (Batterie-Effekt)
+                let root = e.parent;
+                while (root && root.type === 'tail') root = root.parent;
+
+                let displayColor = e.color;
+                if (root && root.tailSegments && typeof root.getMaxEnergy === 'function') {
+                    const index = root.tailSegments.indexOf(e);
+                    const total = root.tailSegments.length;
+                    const energyRatio = root.energy / root.getMaxEnergy();
+                    if ((index / total) >= energyRatio) {
+                        displayColor = '#ffffff'; // Weiß, wenn leer
+                    }
+                }
+                _tempColor.set(displayColor);
+                tailsInstancedMesh.setColorAt(tailCount, _tempColor);
+                tailCount++;
+            }
+        } else if (e.type === 'animal') {
+            // Nur noch die Köpfe werden als Einzel-Objekte (Groups) behandelt
             currentEntityIds.add(e);
 
             if (!entityMeshes.has(e)) {
                 let mesh;
                 if (meshPool[e.type] && meshPool[e.type].length > 0) {
                     mesh = meshPool[e.type].pop();
-                    const color = e.color || '#ffffff';
-                    const actualMesh = mesh.isGroup ? mesh.children[0] : mesh;
 
-                    if (actualMesh.material) {
-                        actualMesh.material = getPooledMaterial(color, 'phong');
+                    // --- DER FIX: Dem recycelten Mesh die neue Farbe zuweisen! ---
+                    const actualMesh = mesh.isGroup ? mesh.children[0] : mesh;
+                    if (actualMesh) {
+                        actualMesh.material = getPooledMaterial(e.color || '#ffffff', 'phong');
                     }
+                    // -------------------------------------------------------------
+
                 } else {
                     mesh = createMeshForEntity(e);
                 }
-
                 scene.add(mesh);
                 entityMeshes.set(e, mesh);
             }
 
             const mesh = entityMeshes.get(e);
-            let hoverHeight = -4;
-            mesh.position.set(e.x, hoverHeight, e.y);
+            mesh.position.set(e.x, -4, e.y);
             mesh.rotation.y = -e.angle;
-
-            if (e.type === 'tail') {
-                updateTailColor(e, mesh);
-            }
 
             // Basis-Skalierung für 3D
             let s = e.size / 10;
-
-            // --- NEU: Nur den Kopf der Pflanzenfresser schrumpfen ---
-            // "instanceof HerbivoreCell" trifft NUR den Kopf. Schwänze werden ignoriert!
-            if (e instanceof HerbivoreCell) {
-                s = s * 0.6; // Kopf auf 70% der Größe
-            }
-
+            if (e instanceof HerbivoreCell) s *= 0.6;
             mesh.scale.set(s, s, s);
         }
     });
 
-
-    // Update Arrays an die Grafikkarte schicken
+    // GPU-Updates für Instanced Meshes
     plantsInstancedMesh.count = plantCount;
     plantsInstancedMesh.instanceMatrix.needsUpdate = true;
     if (plantsInstancedMesh.instanceColor) plantsInstancedMesh.instanceColor.needsUpdate = true;
 
-    // --- NEU: Steine nur an die GPU schicken, wenn sich die Anzahl ändert! ---
+    tailsInstancedMesh.count = tailCount;
+    tailsInstancedMesh.instanceMatrix.needsUpdate = true;
+    if (tailsInstancedMesh.instanceColor) tailsInstancedMesh.instanceColor.needsUpdate = true;
+
+    // Steine-Update (nur bei Bedarf)
     if (stoneCount !== lastRenderedStoneCount) {
         let currentStoneIndex = 0;
         entities.forEach(e => {
             if (e.alive && e.type === 'stone' && currentStoneIndex < MAX_STONES) {
-                const s = e.size / 15;
                 _dummy.position.set(e.x, 0, e.y);
-                _dummy.scale.set(s, s, s);
-                _dummy.rotation.set(0, 0, 0);
+                _dummy.scale.set(e.size / 15, e.size / 15, e.size / 15);
                 _dummy.updateMatrix();
-
                 stonesInstancedMesh.setMatrixAt(currentStoneIndex, _dummy.matrix);
                 _tempColor.set(e.color || '#444444');
                 stonesInstancedMesh.setColorAt(currentStoneIndex, _tempColor);
                 currentStoneIndex++;
             }
         });
-
         stonesInstancedMesh.count = currentStoneIndex;
         stonesInstancedMesh.instanceMatrix.needsUpdate = true;
         if (stonesInstancedMesh.instanceColor) stonesInstancedMesh.instanceColor.needsUpdate = true;
-
-        lastRenderedStoneCount = stoneCount; // Merken, dass wir aktuell sind!
+        lastRenderedStoneCount = stoneCount;
     }
 
-    diamondsInstancedMesh.count = diamondCount;
-    diamondsInstancedMesh.instanceMatrix.needsUpdate = true;
-    if (diamondsInstancedMesh.instanceColor) diamondsInstancedMesh.instanceColor.needsUpdate = true;
-
-    // Tote Tiere und Schwänze in den Pool räumen
+    // Aufräumen von alten Einzel-Meshes (nur Köpfe)
     for (let [e, mesh] of entityMeshes) {
         if (!currentEntityIds.has(e) || e.alive === false) {
             scene.remove(mesh);
-
-            if (meshPool[e.type]) {
-                meshPool[e.type].push(mesh);
-            }
-
+            if (meshPool[e.type]) meshPool[e.type].push(mesh);
             entityMeshes.delete(e);
         }
     }
@@ -629,8 +624,8 @@ function getPooledMaterial(color, type) {
 
 function createMeshForEntity(e) {
     const color = e.color || '#ffffff';
-    let finalMesh;
 
+    // Tiere bekommen ein Gruppen-Mesh für Kopf + Augen
     if (e.type === 'animal') {
         const material = getPooledMaterial(color, 'phong');
         const group = new THREE.Group();
@@ -640,24 +635,18 @@ function createMeshForEntity(e) {
         body.receiveShadow = true;
         group.add(body);
 
-        const eyeColor = 0xffffff; //(e.constructor.name === 'CarnivoreCell' || e.isGiant) ? 0x000000 : 0xffffff;
-        const eyeMat = getPooledMaterial(eyeColor, 'basic');
-
+        const eyeMat = getPooledMaterial(0xffffff, 'basic');
         const eye1 = new THREE.Mesh(SHARED_GEOMETRIES.eye, eyeMat);
         eye1.position.set(7.5, 4, 5.5);
         const eye2 = new THREE.Mesh(SHARED_GEOMETRIES.eye, eyeMat);
         eye2.position.set(7.5, 4, -5.5);
 
         group.add(eye1, eye2);
-        finalMesh = group;
-
-    } else if (e.type === 'tail') {
-        finalMesh = new THREE.Mesh(SHARED_GEOMETRIES.tail, getPooledMaterial(color, 'phong'));
-        finalMesh.castShadow = true;
-        finalMesh.receiveShadow = true;
+        return group;
     }
 
-    return finalMesh;
+    // Fallback (sollte für tail nicht mehr aufgerufen werden)
+    return new THREE.Group();
 }
 
 function drawUIOverlay() {

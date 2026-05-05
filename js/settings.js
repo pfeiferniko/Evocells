@@ -44,9 +44,11 @@ window.SETTINGS = {
     FLEE_SCORE_IDEAL_WEIGHT: 2.0, // Wie wichtig ist es dem Tier, exakt in die entgegengesetzte Richtung des Feindes zu schwimmen? (Höher = direkter Weg)
     FLEE_SCORE_CURRENT_WEIGHT: 1.0, // Wie wichtig ist es dem Tier, sich wenig drehen zu müssen? (Höher = weniger Wackeln)
     FLEE_PANIC_RADIUS_HERBIVORE: 1.5, // Multiplikator für die Sichtweite: Wann gerät ein Pflanzenfresser in Panik?
-    FLEE_PANIC_RADIUS_CARNIVORE: 2, // Multiplikator für den Aggro-Radius: Wann gerät ein Räuber vor einem größeren Räuber in Panik?
+    FLEE_PANIC_RADIUS_CARNIVORE: 1.5, // Multiplikator für den Aggro-Radius: Wann gerät ein Räuber vor einem größeren Räuber in Panik?
     FLEE_HYSTERESIS_BONUS: 200, // Wie viele Pixel wird der Fluchtradius erweitert, während das Tier bereits flieht? (Verhindert hin- und herwechseln)
-    
+
+    CARN_AGGRO_RADIUS_MULTIPLIER: 2.0,
+
     // ==========================================
     // JAGD-VERHALTEN (HUNTING)
     // ==========================================
@@ -147,7 +149,7 @@ window.SETTINGS = {
     // SCHLANGEN (SNAKE)
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
-    SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
+    SNAKE_MAX_REPRODUCTIONS: 2, // Wie oft in ihrem LEBEN darf sie werfen?
     SNAKE_BASE_SPEED: 1.7,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
     SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown

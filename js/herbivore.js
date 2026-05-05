@@ -57,6 +57,8 @@ class HerbivoreCell extends AnimalCell {
             (e.type === 'plant' || e.type === 'stone') && e.alive !== false
         );
 
+        // --- NEU: Den Verfolger kurz merken! ---
+        const previousThreat = this.threat;
         this.threat = null;
         let activeThreats = [];
 
@@ -64,9 +66,13 @@ class HerbivoreCell extends AnimalCell {
             const dx = p.x - this.x;
             const dy = p.y - this.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
+
             if (dist <= panicRadius) {
-                if (this.hasLineOfSight(p, localObstacles)) {
-                    activeThreats.push(p); // Alle gefährlichen, SICHTBAREN Jäger in die Liste packen!
+                // --- DER FIX: Objektpermanenz ---
+                // Wir sehen ihn (Sichtlinie frei) ODER es ist genau der Räuber,
+                // vor dem wir ohnehin gerade fliehen (wir ahnen, dass er hinter dem Stein ist).
+                if (this.hasLineOfSight(p, localObstacles) || p === previousThreat) {
+                    activeThreats.push(p);
                 }
             }
         }

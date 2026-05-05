@@ -6,6 +6,7 @@ class Grid {
         this.cols = Math.ceil(width / cellSize);
         this.rows = Math.ceil(height / cellSize);
         this.grid = new Array(this.cols * this.rows).fill(null).map(() => []);
+        this.queryResult = [];
     }
 
     _getIndex(x, y) {
@@ -33,8 +34,10 @@ class Grid {
         entity._gridIndex = -1;
     }
 
+    // Result-Array wird geleert und wieder befüllt, statt neu erzeugt zu werden
     getEntitiesInArea(x, y, radius) {
-        const entities = [];
+        this.queryResult.length = 0; // Leert das Array blitzschnell ohne GC
+
         const minCol = Math.max(0, Math.floor((x - radius) / this.cellSize));
         const maxCol = Math.min(this.cols - 1, Math.floor((x + radius) / this.cellSize));
         const minRow = Math.max(0, Math.floor((y - radius) / this.cellSize));
@@ -45,11 +48,11 @@ class Grid {
                 const index = col + row * this.cols;
                 const cell = this.grid[index];
                 for (let i = 0; i < cell.length; i++) {
-                    entities.push(cell[i]);
+                    this.queryResult.push(cell[i]);
                 }
             }
         }
-        return entities;
+        return this.queryResult;
     }
 
     clear() {

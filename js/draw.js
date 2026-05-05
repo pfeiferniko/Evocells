@@ -289,9 +289,6 @@ function draw2D() {
 
 
 
-
-
-
 // --- NEU: 2D Nacht-Overlay ---
     const darknessWave = Math.cos(window.dayTime * Math.PI * 2);
     const darkness = (darknessWave * 0.7) + 0.3;

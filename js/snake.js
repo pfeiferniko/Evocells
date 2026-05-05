@@ -19,7 +19,8 @@ class SnakeCell extends CarnivoreCell {
         this.tailLengthMultiplier = 3.0;
         this.tailLengthOffset = 3;
 
-        this.attacksCarnivores = false;
+        this.attacksCarnivores = true;
+        this.genome.sightRange *= 1.5;
 
         this.maxReproductions = window.SETTINGS.SNAKE_MAX_REPRODUCTIONS;
         this.birthCooldown = window.SETTINGS.SNAKE_COOLDOWN_REPRO;
