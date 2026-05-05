@@ -48,13 +48,13 @@ const SHARED_GEOMETRIES = {
     // Körper auf 12x12 (reicht für flüssige Rundung völlig aus)
     animalBody: new THREE.SphereGeometry(11, 12, 12),
     // Augen sind winzig, 6x6 reicht locker
-    eye: new THREE.SphereGeometry(2.5, 5, 5),
+    eye: new THREE.SphereGeometry(4.5, 5, 5),
     plant: new THREE.IcosahedronGeometry(12, 1),
     stone: new THREE.DodecahedronGeometry(15, 0),
     tail: new THREE.SphereGeometry(10, 8, 8),
     // Bei SHARED_GEOMETRIES:
     diamond: new THREE.OctahedronGeometry(12, 0), // Oktaeder ist die perfekte Diamantform!
-    particle: new THREE.BoxGeometry(1, 1, 1)
+    particle: new THREE.BoxGeometry(3, 3, 3)
 };
 
 // --- PERFORMANCE OPTIMIERUNG 3: Garbage Collection ---
@@ -172,29 +172,40 @@ function updateTrackingCamera() {
     }
 
     if (window.trackedEntity && window.trackedEntity.alive) {
-        const e = window.trackedEntity;
+            const e = window.trackedEntity;
 
-        const targetPos = new THREE.Vector3(e.x, 450, e.y + 1.0);
-        const targetLookAt = new THREE.Vector3(e.x, 0, e.y);
+            // --- NEU: Dynamische Zoom-Höhe für Hochkant-Bildschirme ---
+            const aspect = window.WORLD_WIDTH / window.WORLD_HEIGHT;
+            let zoomHeight = 400; // Dein perfekter Standard-Abstand
 
-        camera.position.lerp(targetPos, 0.06);
-        currentLookAt.lerp(targetLookAt, 0.06);
-        camera.lookAt(currentLookAt);
+            // Wenn das Bild hochkant ist (aspect < 1), ziehen wir die Kamera mathematisch exakt
+            // weiter nach oben, damit links und rechts wieder genauso viel zu sehen ist!
+            if (aspect < 1.0) {
+                zoomHeight = 400 / aspect;
+            }
 
-        // SCHATTEN SCHARFSTELLEN
-        if (light && light.shadow) {
-             light.target.position.set(e.x, 0, e.y);
-             light.shadow.camera.left = -450;
-             light.shadow.camera.right = 450;
-             light.shadow.camera.top = 450;
-             light.shadow.camera.bottom = -450;
-             light.shadow.camera.updateProjectionMatrix();
-        }
+            // Kamera-Position mit der neuen zoomHeight
+            const targetPos = new THREE.Vector3(e.x, zoomHeight, e.y + 1.0);
+            const targetLookAt = new THREE.Vector3(e.x, 0, e.y);
 
-    } else {
+            camera.position.lerp(targetPos, 0.1);
+            currentLookAt.lerp(targetLookAt, 0.1);
+            camera.lookAt(currentLookAt);
+
+            // SCHATTEN SCHARFSTELLEN (passt sich nun auch der Höhe an!)
+            if (light && light.shadow) {
+                 light.target.position.set(e.x, 0, e.y);
+                 light.shadow.camera.left = -zoomHeight;
+                 light.shadow.camera.right = zoomHeight;
+                 light.shadow.camera.top = zoomHeight;
+                 light.shadow.camera.bottom = -zoomHeight;
+                 light.shadow.camera.updateProjectionMatrix();
+            }
+
+        } else {
         // Kamera zurück zur Übersicht
-        camera.position.lerp(defaultCameraPos, 0.06);
-        currentLookAt.lerp(defaultLookAt, 0.06);
+        camera.position.lerp(defaultCameraPos, 0.1);
+        currentLookAt.lerp(defaultLookAt, 0.1);
         camera.lookAt(currentLookAt);
 
         // SCHATTEN WIEDER GROSS MACHEN

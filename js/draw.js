@@ -7,7 +7,7 @@ function draw2D() {
     ctx.save(); // Speicher den Standard-Zustand
 
     if (window.trackedEntity && window.trackedEntity.alive) {
-        const zoom = 2.5; // Wie nah soll die Kamera ran?
+        const zoom = 3; // Wie nah soll die Kamera ran?
         // 1. In die Mitte des Bildschirms schieben
         ctx.translate(WORLD_WIDTH / 2, WORLD_HEIGHT / 2);
         // 2. Vergrößern

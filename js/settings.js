@@ -147,7 +147,7 @@ window.SETTINGS = {
     // SCHLANGEN (SNAKE)
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
-    SNAKE_MAX_REPRODUCTIONS: 10, // Wie oft in ihrem LEBEN darf sie werfen?
+    SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
     SNAKE_BASE_SPEED: 1.7,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
     SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown

@@ -598,11 +598,11 @@ function update() {
                     const herbivoreCount = globalHerbivoreCount;
 
                     if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_START) {
-                        numChildren = 30;
+                        numChildren = 10;
                     } else if (herbivoreCount <= window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX) {
                         // Bereich 30 bis 100: Von 10 runter auf 1 Kind
                         const diffTiere = window.SETTINGS.HERBIVORE_OVERPOPULATION_MAX - window.SETTINGS.HERBIVORE_OVERPOPULATION_START;
-                        numChildren = 30 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
+                        numChildren = 10 - ((herbivoreCount - window.SETTINGS.HERBIVORE_OVERPOPULATION_START) / diffTiere) * 9;
                     } else {
                         if (herbivoreCount >= window.SETTINGS.MAX_HERBIVORE_FOR_BIRTH) {
                             numChildren = 0;
