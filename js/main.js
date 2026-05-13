@@ -478,9 +478,10 @@ function generateInitialWorld() {
 function addInitialTail(animal, targetArray, length = 3) {
     for (let i = 0; i < length; i++) {
         let parentNode = (i === 0) ? animal : animal.tailSegments[i - 1];
-
-        // NEU: offset 0, Tiefe i + 1
         let tail = new TailSegment(animal.x, animal.y, parentNode, animal.size * 0.8, 0, i + 1);
+
+        // --- NEU: Den Index direkt im Objekt verewigen ---
+        tail.segmentIndex = animal.tailSegments.length;
 
         animal.tailSegments.push(tail);
         targetArray.push(tail);
@@ -561,6 +562,7 @@ function update() {
 
                         // Neue Glieder der Schlange haben immer branch = 0 (keine Gabelung)
                         const newTail = new TailSegment(e.x, e.y, lastNode, e.size * 0.8, 0, nextDepth);
+                        newTail.segmentIndex = e.tailSegments.length;
                         e.tailSegments.push(newTail);
                         newEntities.push(newTail);
                     }
@@ -574,7 +576,8 @@ function update() {
 
                     const newTailL = new TailSegment(e.x, e.y, parentL, e.size * 0.8, -1, nextDepth);
                     const newTailR = new TailSegment(e.x, e.y, parentR, e.size * 0.8, 1, nextDepth);
-
+                    newTailR.segmentIndex = e.tailSegments.length;
+                    newTailL.segmentIndex = e.tailSegments.length;
                     e.tailSegments.push(newTailL, newTailR);
                     newEntities.push(newTailL, newTailR);
                 }
@@ -584,6 +587,7 @@ function update() {
                     const nextDepth = (lastNode.depth || 0) + 1;
 
                     const newTail = new TailSegment(e.x, e.y, lastNode, e.size * 0.8, 0, nextDepth);
+                    newTail.segmentIndex = e.tailSegments.length;
                     e.tailSegments.push(newTail);
                     newEntities.push(newTail);
                 }
@@ -621,7 +625,7 @@ function update() {
                     if (carnivoreCount >= window.SETTINGS.MAX_CARNIVORES_FOR_BIRTH) {
                         numChildren = 0;
                     } else {
-                        numChildren = 1;
+                        numChildren = 2;
                     }
                 }
 
@@ -677,16 +681,8 @@ function update() {
                 // --- NEU: Schwanz-Erkennung ---
                 let rootAnimal = null;
                 if (other.type === 'tail') {
-                    // Pflanzenfresser ignorieren Schwänze wie bisher. Nur Räuber schnappen zu!
                     if (!(e instanceof CarnivoreCell)) continue;
-
-                    // Wem gehört dieser Schwanz? Wir klettern den Baum hoch bis zum Kopf.
-                    rootAnimal = other.parent;
-                    while (rootAnimal && rootAnimal.type === 'tail') {
-                        rootAnimal = rootAnimal.parent;
-                    }
-
-                    // Ganz wichtig: Ein Räuber darf sich nicht selbst in den Schwanz beißen!
+                    rootAnimal = other.rootAnimal; // Direktzugriff
                     if (rootAnimal === e) continue;
                 }
 
@@ -1069,7 +1065,7 @@ function update() {
             if (e.settleTimer > 0) {
                 e.settleTimer--; // Timer läuft ab
 
-                const neighbors = staticGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 50);
+                const neighbors = staticGrid.getEntitiesInArea(e.x, e.y, e.size * 2 + 10);
                 for (const other of neighbors) {
 
                     // --- NEU: Diamanten in die Kollision mit aufnehmen ---
@@ -1461,6 +1457,7 @@ function saveSimulationState() {
             data.spineY = e.spineY;
             data.dotColor = e.dotColor;
             data.parentId = e.parent ? e.parent._saveId : null;
+            data.segmentIndex = e.segmentIndex; // <--- DIESE ZEILE HINZUFÜGEN
         } else if (e instanceof AnimalCell) {
             data.genome = { ...e.genome };
             data.angle = e.angle;
@@ -1531,6 +1528,7 @@ function loadSimulationState() {
         } else if (data.className === 'TailSegment') {
             e = new TailSegment(loadX, loadY, null, data.size, data.branch, data.depth);
             e.spineX = loadSpineX; e.spineY = loadSpineY; e.color = data.color; e.dotColor = data.dotColor;
+            e.segmentIndex = data.segmentIndex; // <--- DIESE ZEILE HINZUFÜGEN
         } else if (['HerbivoreCell', 'CarnivoreCell', 'SnakeCell'].includes(data.className)) {
             let gen = new Genome(data.genome);
             if (data.className === 'HerbivoreCell') e = new HerbivoreCell(loadX, loadY, gen, false);
@@ -1580,7 +1578,7 @@ function loadSimulationState() {
 // Auto-Save alle 10 Sekunden (geändert)
 setInterval(() => {
     if (!isResetting && !window.isDemoMode && entities.length > 0) saveSimulationState();
-}, 10000);
+}, 30000);
 
 // Save beim Schließen / Aktualisieren des Tabs (geändert)
 window.addEventListener('beforeunload', () => {

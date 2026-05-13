@@ -366,27 +366,41 @@ class AnimalCell extends BaseCell {
         }
         this.angle += Math.max(-currentMaxTurn, Math.min(currentMaxTurn, diff));
 
-        // 3. Geschwindigkeit berechnen
+        // 3. ZIEL-Geschwindigkeit (Wunsch-Speed) berechnen
         const sizeBonusMultiplier = 1 + (this.size * 0.02);
-        let currentSpeed = this.genome.speed * this.speedMultiplier * this.agingFactor * sizeBonusMultiplier;
+        let targetSpeed = this.genome.speed * this.speedMultiplier * this.agingFactor * sizeBonusMultiplier;
 
-        // --- NEU: Patrouillen-Modus für Jäger ---
-        // Wenn das Tier ein Fleischfresser ist, gerade NICHT flieht und KEIN Ziel hat (food ist null)
+        // Patrouillen-Modus für Jäger
         if (this instanceof CarnivoreCell && !isFleeing && !this.target) {
-            currentSpeed *= 0.35; // Drosselt die Geschwindigkeit auf 50%
+            targetSpeed *= 0.35; // Drosselt die Ziel-Geschwindigkeit auf 35%
         }
 
-        if (distanceToTarget < currentSpeed) {
-            currentSpeed = distanceToTarget;
+        if (distanceToTarget < targetSpeed) {
+            targetSpeed = distanceToTarget;
         }
 
-        // 4. Bewegen
-        this.x += Math.cos(this.angle) * currentSpeed;
-        this.y += Math.sin(this.angle) * currentSpeed;
+        // --- NEU: Trägheit (Beschleunigung & Bremsen) ---
+        // Du kannst diese Werte später auch in die window.SETTINGS packen!
+        const acceleration = 0.01; // Wie schnell wird Gas gegeben?
+        const deceleration = 0.01; // Bremsen (Wasserwiderstand) ist etwas stärker
 
-        // Takt fließend anpassen
+        // Falls das Tier gerade geboren wurde und die Variable noch fehlt:
+        if (this.actualSpeed === undefined) this.actualSpeed = 0;
+
+        // Weiches Annähern an die Ziel-Geschwindigkeit
+        if (this.actualSpeed < targetSpeed) {
+            this.actualSpeed = Math.min(targetSpeed, this.actualSpeed + acceleration);
+        } else if (this.actualSpeed > targetSpeed) {
+            this.actualSpeed = Math.max(targetSpeed, this.actualSpeed - deceleration);
+        }
+
+        // 4. Bewegen (mit der ECHTEN, trägen Geschwindigkeit)
+        this.x += Math.cos(this.angle) * this.actualSpeed;
+        this.y += Math.sin(this.angle) * this.actualSpeed;
+
+        // Takt fließend anpassen (Abhängig vom echten Speed)
         const sizeWiggleFactor = 4 / Math.max(2, this.size);
-        targetWiggleSpeed = 0.05 + Math.min(currentSpeed * sizeWiggleFactor, 1.2);
+        targetWiggleSpeed = 0.05 + Math.min(this.actualSpeed * sizeWiggleFactor, 1.2);
 
         this.currentWiggleSpeed += (targetWiggleSpeed - this.currentWiggleSpeed) * 0.1;
         this.wigglePhase += this.currentWiggleSpeed * 0.3;
@@ -410,6 +424,11 @@ class AnimalCell extends BaseCell {
             }
         }
 
+        // --- NEU: THROTTLING (Die CPU-Bremse) ---
+        // Wenn das Tier keinen Wegpunkt hat, sucht es ab jetzt nur noch
+        // alle 30 Frames (ca. 2x pro Sekunde) nach einem neuen!
+        if (this.age % 30 !== 0) return;
+
         // 3. Klaustrophobie-Check: Sind wir am Rand oder eingeklemmt?
         const edge = 50;
         const nearEdge = this.x < edge || this.x > window.WORLD_WIDTH - edge ||
@@ -429,7 +448,7 @@ class AnimalCell extends BaseCell {
             let bestSpot = null;
             let minObstacles = Infinity;
 
-            // Performante Stichproben-Suche: Wir testen einfach 5 komplett zufällige Orte!
+            // Performante Stichproben-Suche: Wir testen einfach 10 komplett zufällige Orte!
             const attempts = 10;
 
             for (let i = 0; i < attempts; i++) {
@@ -590,24 +609,30 @@ class AnimalCell extends BaseCell {
         return bestTarget;
     }
 
-    // NEU: Universeller Sichtlinien-Check für alle Tiere
+    // NEU: Hochperformanter Sichtlinien-Check
     hasLineOfSight(target, obstacles) {
         const dx = target.x - this.x;
         const dy = target.y - this.y;
         const lenSq = dx * dx + dy * dy;
 
+        // 1. BOUNDING BOX VORBEREITEN (Aus der Schleife gezogen!)
+        // Wir ersetzen Math.min/Math.max durch simple if-Abfragen, das ist für die CPU leichter verdaulich.
+        let minX = this.x; let maxX = target.x;
+        if (this.x > target.x) { minX = target.x; maxX = this.x; }
+
+        let minY = this.y; let maxY = target.y;
+        if (this.y > target.y) { minY = target.y; maxY = this.y; }
+
         for (let i = 0; i < obstacles.length; i++) {
             const obs = obstacles[i];
+            const os = obs.size; // Größe cachen, um Eigenschafts-Zugriffe zu sparen
 
-            // 1. Schneller Bounding-Box Check
-            const minX = Math.min(this.x, target.x) - obs.size;
-            const maxX = Math.max(this.x, target.x) + obs.size;
-            const minY = Math.min(this.y, target.y) - obs.size;
-            const maxY = Math.max(this.y, target.y) + obs.size;
+            // 2. Ultra-schneller Bounding-Box Check
+            if (obs.x < minX - os || obs.x > maxX + os || obs.y < minY - os || obs.y > maxY + os) {
+                continue; // Objekt ist gar nicht im groben Bereich der Sichtlinie
+            }
 
-            if (obs.x < minX || obs.x > maxX || obs.y < minY || obs.y > maxY) continue;
-
-            // 2. Mathematische Projektion auf die Sichtlinie
+            // 3. Mathematische Projektion auf die Sichtlinie
             const px = obs.x - this.x;
             const py = obs.y - this.y;
             let t = (px * dx + py * dy) / lenSq;
@@ -615,9 +640,16 @@ class AnimalCell extends BaseCell {
             if (t >= 0 && t <= 1) {
                 const closestX = this.x + t * dx;
                 const closestY = this.y + t * dy;
-                const distSqToLine = (closestX - obs.x)**2 + (closestY - obs.y)**2;
 
-                if (distSqToLine <= (obs.size * 0.8)**2) {
+                // 4. Klassische Multiplikation statt **2 (Perfomance Boost)
+                const diffX = closestX - obs.x;
+                const diffY = closestY - obs.y;
+                const distSqToLine = (diffX * diffX) + (diffY * diffY);
+
+                // Den Schwellenwert quadrieren wir auch direkt mit Multiplikation
+                const threshold = os * 0.8;
+
+                if (distSqToLine <= (threshold * threshold)) {
                     return false; // Sicht ist durch dieses Objekt blockiert!
                 }
             }
@@ -674,6 +706,7 @@ class AnimalCell extends BaseCell {
                     // Checken die echte zurückgelegte Strecke
                     if (this.accumulatedDist < minMovement) {
 
+                        /*
                         // --- AUSBRUCH-LOGIK ---
                         this.target = null;
                         this.waypoint = null; // <--- NEU: Auch den Wegpunkt vergessen, er ist unerreichbar!
@@ -690,7 +723,7 @@ class AnimalCell extends BaseCell {
                         } else if (r < 0.9) {
                             this.angle -= (Math.PI * 0.5) + Math.random() * Math.PI;
                         }
-                        return;
+                        return;*/
                     }
 
                     // Ansonsten: Alles ok, einfach weiter messen
@@ -709,6 +742,148 @@ class AnimalCell extends BaseCell {
     }
 
     flee(threats, grid) {
+        // --- 1. GEMEINSAMER SICHT- UND VERFOLGUNGS-CHECK ---
+        // Wir holen uns schnell die Steine/Pflanzen in der Nähe
+        const sightRadius = this.genome.sightRange || 150;
+        const localObstacles = grid.getEntitiesInArea(this.x, this.y, sightRadius).filter(e => e.type === 'plant' || e.type === 'stone');
+
+        const validThreats = [];
+        for (const threat of threats) {
+            const isPursuingMe = (threat.target === this);
+            const inSight = this.hasLineOfSight(threat, localObstacles);
+
+            // Gefahr ist real, wenn er uns direkt jagt ODER wir ihn noch sehen
+            if (isPursuingMe || inSight) {
+                validThreats.push(threat);
+            }
+        }
+
+        // --- 2. ABBRUCH-LOGIK (Entwarnung) ---
+        if (validThreats.length === 0) {
+            this.currentFleeTarget = null;
+            this.activeThreats = []; // Das Angst-Gedächtnis für den nächsten Frame löschen!
+            this.threat = null;
+
+            // Trägheit zurücksetzen, damit sie sich sofort wieder normal verhalten
+            this.fleeDirX = undefined;
+            this.fleeDirY = undefined;
+            return; // Flucht sofort abbrechen!
+        }
+
+        // --- 3. SPEZIFISCHE FLUCHT AUFRUFEN (mit den validierten Feinden!) ---
+        if (this.constructor.name === 'HerbivoreCell') {
+            this.fleeHerbivore(validThreats, grid);
+        } else {
+            // Alles andere (CarnivoreCell und SnakeCell) nutzt die smarte KI
+            this.fleeCarnivore(validThreats, grid);
+        }
+    }
+
+    fleeCarnivore(threats, grid) {
+        this.target = null;
+        this.targetTimer = 0;
+
+        // 1. DAS RADAR (Context Steering)
+        const numSamples = 16;
+        const lookAhead = 50; // Etwas weiter vorausschauen für bessere Wegfindung
+
+        let bestScore = -Infinity;
+        let bestDx = 0;
+        let bestDy = 0;
+
+        // In welche Richtung fliehen wir GERADE AKTUELL? (Für leichte Trägheit)
+        let currentAngle = this.angle;
+        if (this.fleeDirX !== undefined && (this.fleeDirX !== 0 || this.fleeDirY !== 0)) {
+            currentAngle = Math.atan2(this.fleeDirY, this.fleeDirX);
+        }
+
+        for (let i = 0; i < numSamples; i++) {
+            const angle = (Math.PI * 2 / numSamples) * i;
+            const dx = Math.cos(angle);
+            const dy = Math.sin(angle);
+
+            // Wo liegt der Punkt in der Welt?
+            const px = this.x + dx * lookAhead;
+            const py = this.y + dy * lookAhead;
+
+            // --- WAND-CHECK ---
+            const buffer = 20;
+            if (px < buffer || px > window.WORLD_WIDTH - buffer ||
+                py < buffer || py > window.WORLD_HEIGHT - buffer) {
+                continue; // Punkt an der Wand wird ignoriert
+            }
+
+            // --- SCORE 1: Distanz zum NÄCHSTEN Feind (Nicht zum Schwerpunkt!) ---
+            let minThreatDistSq = Infinity;
+            for (const threat of threats) {
+                const distSq = (px - threat.x)**2 + (py - threat.y)**2;
+                if (distSq < minThreatDistSq) {
+                    minThreatDistSq = distSq;
+                }
+            }
+
+            // Je weiter weg der nächste Feind an diesem Punkt ist, desto besser
+            const distScore = Math.sqrt(minThreatDistSq);
+
+            // --- SCORE 2: DIE STRAFE FÜR RICHTUNGSÄNDERUNGEN ---
+            let angleDiff = Math.abs(angle - currentAngle);
+            if (angleDiff > Math.PI) angleDiff = (2 * Math.PI) - angleDiff;
+
+            // DRATISCH REDUZIERT: Von 100 auf 15!
+            // Das Tier bevorzugt jetzt Sicherheit vor geradem Schwimmen.
+            const turnPenalty = angleDiff * 40;
+
+            // --- GESAMT-SCORE ---
+            const finalScore = distScore - turnPenalty;
+
+            if (finalScore > bestScore) {
+                bestScore = finalScore;
+                bestDx = dx;
+                bestDy = dy;
+            }
+        }
+
+        // Notfall: Eingekesselt an der Wand
+        if (bestScore === -Infinity) {
+            bestDx = (window.WORLD_WIDTH / 2) - this.x;
+            bestDy = (window.WORLD_HEIGHT / 2) - this.y;
+        }
+
+        // 2. FLUCHTRICHTUNG SETZEN UND TRÄGHEIT ANWENDEN
+        let mag = Math.sqrt(bestDx * bestDx + bestDy * bestDy);
+        if (mag > 0) {
+            bestDx /= mag;
+            bestDy /= mag;
+        }
+
+        if (this.fleeDirX === undefined) {
+            this.fleeDirX = bestDx;
+            this.fleeDirY = bestDy;
+        }
+
+        // Sanfte Trägheit (Zittern verhindern)
+        this.fleeDirX = this.fleeDirX * 0.7 + bestDx * 0.3;
+        this.fleeDirY = this.fleeDirY * 0.7 + bestDy * 0.3;
+
+        const finalMag = Math.sqrt(this.fleeDirX * this.fleeDirX + this.fleeDirY * this.fleeDirY);
+        if (finalMag > 0) {
+            this.fleeDirX /= finalMag;
+            this.fleeDirY /= finalMag;
+        }
+
+        // Zielpunkt tief in den Raum setzen
+        const fleeTarget = {
+            x: this.x + this.fleeDirX * 100,
+            y: this.y + this.fleeDirY * 100
+        };
+
+        this.currentFleeTarget = fleeTarget;
+
+        const avoidEntities = grid.getEntitiesInArea(this.x, this.y, 60);
+        this.move(fleeTarget, true, avoidEntities);
+    }
+
+    fleeHerbivore(threats, grid) {
         this.target = null;
         this.targetTimer = 0;
 

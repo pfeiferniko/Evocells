@@ -100,8 +100,8 @@ function drawShopWindow() {
 
 function handleShopClick(canvasX, canvasY) {
     // 1. Klick auf den Plus/X-Button
-    if (canvasX >= SHOP_BTN.x && canvasX <= SHOP_BTN.x + SHOP_BTN.w &&
-            canvasY >= SHOP_BTN.y && canvasY <= SHOP_BTN.y + SHOP_BTN.h) {
+    if (canvasX >= SHOP_BTN.x &&
+            canvasY <= SHOP_BTN.y + SHOP_BTN.h) {
 
             // Wenn irgendein Modus (Platzieren, Löschen ODER Tracking) aktiv ist -> ALLES BEENDEN
             if (isPlacementMode || isDeleteMode || window.trackedEntity) {

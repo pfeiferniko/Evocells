@@ -28,6 +28,10 @@ let defaultCameraPos = new THREE.Vector3();
 let defaultLookAt = new THREE.Vector3();
 let isCameraInit = false;
 
+let floorCanvas, floorCtx, floorTexture;
+let normalStain, superStain; // Unsere vorgefertigten "Stempel"
+const plantGlows = new Map(); // <--- NEU: Das Gedächtnis für unsere Lichter
+
 // Hilfsfunktion: Wandelt den 2D-Mausklick in 3D-Bodenkoordinaten um
 window.getClickTarget3D = function(ndcX, ndcY) {
     if (!camera) return null;
@@ -64,7 +68,8 @@ function init3D() {
 
     // 1. Hintergrund: Fast Schwarz mit einem Hauch von Kühle (0x020406).
     // Das ist dunkel genug, um absolut keinen Kontrast-Rahmen mehr zu erzeugen.
-    scene.background = new THREE.Color(0x020406);
+    //scene.background = new THREE.Color(0x020406);
+    scene.background = new THREE.Color(0x000000);
 
     const aspect = WORLD_WIDTH / WORLD_HEIGHT;
     camera = new THREE.PerspectiveCamera(45, aspect, 1, 10000);
@@ -85,12 +90,12 @@ function init3D() {
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 // 2. Umgebungslicht in der Variable speichern
-    ambientLight = new THREE.AmbientLight(0x405060, 0.6);
-    scene.add(ambientLight);
+     ambientLight = new THREE.AmbientLight(0xffffff, 0.06);
+     scene.add(ambientLight);
 
     // 3. Hauptlicht: Intensität 3.0 sorgt für starke Highlights auf den dunklen Oberflächen.
-    light = new THREE.DirectionalLight(0xe0f0ff, 2);
-    light.position.set(WORLD_WIDTH / 2, 800, -2000);
+    light = new THREE.DirectionalLight(0xffffff, 2);
+    light.position.set(WORLD_WIDTH / 2, 700, -2000);
     light.target.position.set(WORLD_WIDTH / 2, 0, WORLD_HEIGHT / 2);
     scene.add(light.target);
 
@@ -111,20 +116,33 @@ function init3D() {
 
     scene.add(light);
 
-    // 4. Bodenplatte: Abgedunkelt auf 0x080a0f.
-    // Das ist deutlich dunkler als 0x121820, bietet aber im Vergleich zum
-    // fast schwarzen Hintergrund (0x020406) immer noch genug Fläche für Schatten.
-    const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
-        new THREE.MeshPhongMaterial({ color: 0x0505060 })
-    );
+    // 4. Bodenplatte
+    // const floor = new THREE.Mesh(
+    //     new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT),
+    //     new THREE.MeshPhongMaterial({ color: 0x0205030 })
+    // );
+    // floor.rotation.x = -Math.PI / 2;
+    // floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
+    // floor.receiveShadow = true;
+    // scene.add(floor);
+
+    // In init3D()
+    initFloorCanvas(); // Canvas vorbereiten
+
+    const floorGeometry = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT);
+    const floorMaterial = new THREE.MeshPhongMaterial({
+        map: floorTexture,
+        shininess: 0 // Optional: Verhindert zu starke Lichtreflexionen auf den Flecken
+    });
+
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
     floor.receiveShadow = true;
     scene.add(floor);
 
     // --- NEU: AQUARIUM-KANTEN ---
-    // Wie hoch das Aquarium-Glas sein soll (400 wirkt bei 2000er Breite sehr gut)
+    // Wie hoch das Aquarium-Glas sein soll
     const aquariumHeight = 50;
 
     // Wir bauen einen unsichtbaren Kasten in Welt-Größe
@@ -151,6 +169,114 @@ function init3D() {
 
     initPlankton3D();
     initInstancedMeshes();
+}
+
+const STAIN_SIZE = 200; // Mach den Wert größer (z.B. 128), wenn du noch mehr Farbe willst
+const HALF_STAIN = STAIN_SIZE / 2;
+
+function createStain(colorStr) {
+    const canvas = document.createElement('canvas');
+    canvas.width = STAIN_SIZE;
+    canvas.height = STAIN_SIZE;
+    const ctx = canvas.getContext('2d');
+
+    // Der Verlauf geht jetzt von der neuen Mitte bis zum neuen Rand
+    const grad = ctx.createRadialGradient(HALF_STAIN, HALF_STAIN, 0, HALF_STAIN, HALF_STAIN, HALF_STAIN);
+
+    // Kleiner Tipp: Wenn die Farbe in der Mitte zu schwach ist,
+    // kannst du die Deckkraft hier im String erhöhen, z.B. auf 0.8 oder 0.9
+    grad.addColorStop(0, colorStr);
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, STAIN_SIZE, STAIN_SIZE);
+    return canvas;
+}
+
+function initFloorCanvas() {
+    floorCanvas = document.createElement('canvas');
+    // Die Auflösung entspricht jetzt 1:1 der 3D-Welt!
+    floorCanvas.width = window.WORLD_WIDTH;
+    floorCanvas.height = window.WORLD_HEIGHT;
+
+    floorCtx = floorCanvas.getContext('2d');
+    floorTexture = new THREE.CanvasTexture(floorCanvas);
+    floorTexture.magFilter = THREE.LinearFilter;
+    floorTexture.minFilter = THREE.LinearFilter;
+
+    normalStain = createStain('rgba(46, 204, 113, 0.6)');
+    superStain = createStain('rgba(142, 68, 173, 0.6)');
+}
+
+function updateFloorStains() {
+    if (!floorCtx) return;
+
+    // 1. Alle bekannten Lichter als "diesen Frame noch nicht gesehen" markieren
+    plantGlows.forEach(glow => glow.seenThisFrame = false);
+
+    // 2. Aktive Pflanzen durchgehen und Lichter updaten/hinzufügen
+    entities.forEach(e => {
+        if (e.type === 'plant' && e.alive) {
+            let glow = plantGlows.get(e);
+            if (!glow) {
+                // NEU: Pflanze ist frisch gewachsen -> Licht startet unsichtbar (Alpha 0)
+                glow = { alpha: 0, isSuper: e.isSuper, x: e.x, y: e.y, pulseOffset: e.pulseOffset };
+                plantGlows.set(e, glow);
+            }
+
+            glow.seenThisFrame = true;
+
+            // Position aktuell halten, falls die Pflanze von Tieren geschoben wird
+            glow.x = e.x;
+            glow.y = e.y;
+
+            // Langsam einblenden (0.02 pro Frame = ca. 1 Sekunde für 100%)
+            if (glow.alpha < 1.0) {
+                glow.alpha = Math.min(1.0, glow.alpha + 0.02);
+            }
+        }
+    });
+
+    // 3. Boden schwarz leeren
+    floorCtx.fillStyle = '#050508';
+    floorCtx.fillRect(0, 0, floorCanvas.width, floorCanvas.height);
+
+    const scaleX = floorCanvas.width / window.WORLD_WIDTH;
+    const scaleY = floorCanvas.height / window.WORLD_HEIGHT;
+    const time = Date.now();
+
+    // 4. Alle Lichter zeichnen (und tote ausblenden)
+    for (let [plant, glow] of plantGlows.entries()) {
+
+        if (!glow.seenThisFrame) {
+            // Die Pflanze existiert im Spiel nicht mehr (gefressen/gelöscht)
+            // -> Licht sanft ausblenden (0.03 ist ein Hauch schneller als das Einblenden)
+            glow.alpha -= 0.03;
+        }
+
+        // Wenn das Licht komplett erloschen ist, aus unserem Gedächtnis löschen
+        if (glow.alpha <= 0) {
+            plantGlows.delete(plant);
+            continue; // Diesen Frame nicht mehr zeichnen
+        }
+
+        // Sway berechnen (selbst wenn die Pflanze tot ist, schwingt das Licht sanft aus!)
+        const swayZ = Math.sin(time * 0.0005 + glow.pulseOffset) * 10;
+        const cx = glow.x * scaleX;
+        const cy = (glow.y + swayZ) * scaleY;
+
+        const stain = glow.isSuper ? superStain : normalStain;
+
+        // Den Transparenz-Wert (Alpha) des Canvas setzen
+        floorCtx.globalAlpha = glow.alpha;
+        floorCtx.drawImage(stain, cx - HALF_STAIN, cy - HALF_STAIN);
+    }
+
+    // WICHTIG: Transparenz für den nächsten Frame wieder auf 100% zurücksetzen!
+    floorCtx.globalAlpha = 1.0;
+
+    // Grafikkarte das neue Bild übergeben
+    floorTexture.needsUpdate = true;
 }
 
 function updateTrackingCamera() {
@@ -258,7 +384,7 @@ function updateDayNight3D() {
 
     // 3. UMGEBUNGSLICHT (Ambient):
     // Schwankt sehr dezent zwischen 0.4 (Nacht) und 0.6 (Tag)
-    ambientLight.intensity = 0.4 + (timePhase * 0.2);
+    ambientLight.intensity = 0.2 + (timePhase * 0.2);
 
     // Ambient-Farbe (Kühlt nachts etwas ab)
     const ambR = 0x20 + (0x20 * timePhase);
@@ -303,6 +429,7 @@ function initInstancedMeshes() {
     tailsInstancedMesh = new THREE.InstancedMesh(SHARED_GEOMETRIES.tail, tailMat, MAX_TAILS);
     tailsInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     tailsInstancedMesh.castShadow = true; // Schwänze dürfen Schatten werfen
+    tailsInstancedMesh.receiveShadow = true;
     scene.add(tailsInstancedMesh);
 
     // --- BUGFIX: Farb-Puffer für die Grafikkarte erzwingen ---
@@ -350,6 +477,10 @@ function draw3D() {
     updateDayNight3D();
 
     updateTrackingCamera();
+
+    if (frameCount % 10 === 0) {
+        updateFloorStains();
+    }
 
     renderer.render(scene, camera);
     drawUIOverlay();
@@ -417,15 +548,28 @@ function syncEntities() {
 
         if (e.type === 'plant') {
             if (plantCount < MAX_PLANTS) {
-                const pulse = 1.0 + Math.sin((Date.now() * e.pulseSpeed) + e.pulseOffset) * 0.1;
+                const time = Date.now();
+
+                // 1. Das bestehende Pulsieren (Größe)
+                const pulse = 1.0 + Math.sin((time * e.pulseSpeed) + e.pulseOffset) * 0.1;
                 const s = (e.size / 10) * pulse;
-                _dummy.position.set(e.x, 0, e.y);
+
+                // 2. NEU: Ausschließlich vor und zurück (Z-Achse)
+                // 0.0005 macht die Welle schön langsam und ruhig, * 10 ist der Radius
+                const swayZ = Math.sin(time * 0.0005 + e.pulseOffset) * 5;
+
+                // 3. Offset nur auf e.y (Z-Achse in 3D) addieren, X bleibt starr
+                _dummy.position.set(e.x, 0, e.y + swayZ);
+
+                _dummy.rotation.set(0, 0, 0); // Keine Neigung mehr
+
                 _dummy.scale.set(s, s, s);
-                _dummy.rotation.set(0, 0, 0);
                 _dummy.updateMatrix();
                 plantsInstancedMesh.setMatrixAt(plantCount, _dummy.matrix);
+
                 _tempColor.set(e.color || '#ffffff');
                 plantsInstancedMesh.setColorAt(plantCount, _tempColor);
+
                 plantCount++;
             }
         } else if (e.type === 'stone') {
@@ -455,8 +599,7 @@ function syncEntities() {
                 tailsInstancedMesh.setMatrixAt(tailCount, _dummy.matrix);
 
                 // Energie-Farben Logik (Batterie-Effekt)
-                let root = e.parent;
-                while (root && root.type === 'tail') root = root.parent;
+                let root = e.rootAnimal;
 
                 let displayColor = e.color;
                 if (root && root.tailSegments && typeof root.getMaxEnergy === 'function') {
@@ -480,12 +623,12 @@ function syncEntities() {
                 if (meshPool[e.type] && meshPool[e.type].length > 0) {
                     mesh = meshPool[e.type].pop();
 
-                    // --- DER FIX: Dem recycelten Mesh die neue Farbe zuweisen! ---
+                    // --- DER ECHTE FIX: Nur die Farbe des bestehenden Materials ändern! ---
                     const actualMesh = mesh.isGroup ? mesh.children[0] : mesh;
-                    if (actualMesh) {
-                        actualMesh.material = getPooledMaterial(e.color || '#ffffff', 'phong');
+                    if (actualMesh && actualMesh.material) {
+                        // Die Grafikkarte behält das Material, wir färben es nur um. Keine neuen Objekte!
+                        actualMesh.material.color.set(e.color || '#ffffff');
                     }
-                    // -------------------------------------------------------------
 
                 } else {
                     mesh = createMeshForEntity(e);
@@ -544,35 +687,6 @@ function syncEntities() {
     }
 }
 
-function updateTailColor(segment, mesh) {
-    let root = segment.parent;
-    while (root && root.type === 'tail') root = root.parent;
-
-    if (root && root.tailSegments) {
-        const index = root.tailSegments.indexOf(segment);
-        const total = root.tailSegments.length;
-
-        // Verhindern, dass durch 0 geteilt wird
-        const maxEnergy = typeof root.getMaxEnergy === 'function' ? root.getMaxEnergy() : 1;
-        const energyRatio = root.energy / maxEnergy;
-
-        const isEmpty = (index / total) >= energyRatio;
-
-        const actualMesh = mesh.isGroup ? mesh.children[0] : mesh;
-
-        // --- DER FIX: Material austauschen statt Farbe umfärben ---
-        if (actualMesh) {
-            if (isEmpty) {
-                // Schwanzglied ist leer -> Wir weisen ein weißes gepooltes Material zu
-                actualMesh.material = getPooledMaterial('#ffffff', 'phong');
-            } else {
-                // Schwanzglied hat Energie -> Wir weisen die Originalfarbe zu
-                actualMesh.material = getPooledMaterial(segment.color, 'phong');
-            }
-        }
-    }
-}
-
 function syncParticles() {
     let count = 0;
 
@@ -627,7 +741,8 @@ function createMeshForEntity(e) {
 
     // Tiere bekommen ein Gruppen-Mesh für Kopf + Augen
     if (e.type === 'animal') {
-        const material = getPooledMaterial(color, 'phong');
+        // Einfach ein eigenes Material für diesen Körper erzeugen
+        const material = new THREE.MeshPhongMaterial({ color: color });
         const group = new THREE.Group();
 
         const body = new THREE.Mesh(SHARED_GEOMETRIES.animalBody, material);

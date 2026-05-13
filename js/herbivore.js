@@ -38,48 +38,80 @@ class HerbivoreCell extends AnimalCell {
         const status = super.update(staticGrid, dynamicGrid);
         if (status !== 'moving') return status;
 
+        // --- 1. RADIEN BERECHNEN ---
         let panicRadius = this.genome.sightRange * window.SETTINGS.FLEE_PANIC_RADIUS_HERBIVORE;
-
-        // --- HYSTERESE-BONUS ---
-        // Wenn das Tier im letzten Frame bereits auf der Flucht war,
-        // addieren wir den Bonus, damit es nicht sofort aufhört zu fliehen,
-        // wenn der Räuber nur 1 Pixel außerhalb des normalen Radius ist.
-        if (this.threat) {
+        if (this.activeThreats && this.activeThreats.length > 0) {
             panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
         }
 
-        const predators = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
-            e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions && e.size >= this.size
-        );
+        // --- 2. SINGLE SOURCE OF TRUTH ---
+        const maxRadius = Math.max(panicRadius, this.genome.sightRange, 60);
+        const maxRadiusSq = maxRadius * maxRadius;
+        const panicRadiusSq = panicRadius * panicRadius;
+        const sightRangeSq = this.genome.sightRange * this.genome.sightRange;
 
-        // --- NEU: Hindernisse für den Flucht-Sicht-Check laden ---
-        const localObstacles = staticGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
-            (e.type === 'plant' || e.type === 'stone') && e.alive !== false
-        );
+        const allDynamic = dynamicGrid.getEntitiesInArea(this.x, this.y, maxRadius);
+        const allStatic = staticGrid.getEntitiesInArea(this.x, this.y, maxRadius);
 
-        // --- NEU: Den Verfolger kurz merken! ---
-        const previousThreat = this.threat;
-        this.threat = null;
-        let activeThreats = [];
+        const predators = [];
+        const visiblePlants = [];
+        const localObstacles = [];
+        const moveObstacles = [];
 
-        for (const p of predators) {
-            const dx = p.x - this.x;
-            const dy = p.y - this.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+        // Statische Objekte (Hindernisse & Futter) sortieren
+        for (let i = 0; i < allStatic.length; i++) {
+            const e = allStatic[i];
+            if (e.alive !== false) {
+                const dx = e.x - this.x;
+                const dy = e.y - this.y;
+                const distSq = dx * dx + dy * dy;
 
-            if (dist <= panicRadius) {
-                // --- DER FIX: Objektpermanenz ---
-                // Wir sehen ihn (Sichtlinie frei) ODER es ist genau der Räuber,
-                // vor dem wir ohnehin gerade fliehen (wir ahnen, dass er hinter dem Stein ist).
-                if (this.hasLineOfSight(p, localObstacles) || p === previousThreat) {
-                    activeThreats.push(p);
+                if (distSq <= maxRadiusSq) {
+                    if (distSq <= 3600) moveObstacles.push(e); // 60 * 60
+
+                    if (e.type === 'plant' || e.type === 'stone') {
+                        if (distSq <= panicRadiusSq) localObstacles.push(e);
+                    }
+                    if (e.type === 'plant' && distSq <= sightRangeSq) {
+                        visiblePlants.push(e);
+                    }
                 }
             }
         }
 
+        // Dynamische Objekte (Räuber) sortieren
+        for (let i = 0; i < allDynamic.length; i++) {
+            const e = allDynamic[i];
+            if (e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions && e.size >= this.size) {
+                const dx = e.x - this.x;
+                const dy = e.y - this.y;
+                const distSq = dx * dx + dy * dy;
+
+                if (distSq <= panicRadiusSq) {
+                    predators.push(e);
+                }
+            }
+        }
+
+        // --- 3. FLUCHT & LOGIK ---
+        const previousThreats = this.activeThreats || [];
+        this.threat = null;
+        let activeThreats = [];
+
+        for (let i = 0; i < predators.length; i++) {
+            const p = predators[i];
+            // Wir sparen uns hier Math.sqrt, da wir in der Sortierung schon geprüft haben, dass sie im Radius sind!
+            if (this.hasLineOfSight(p, localObstacles) || previousThreats.includes(p)) {
+                activeThreats.push(p);
+            }
+        }
+
+        // Das gesamte Rudel für den nächsten Frame im Tier speichern!
+        this.activeThreats = activeThreats;
+
         if (activeThreats.length > 0) {
-            this.threat = activeThreats[0]; // Behalten wir für die Hysterese und die rote Debug-Linie
-            this.flee(activeThreats, staticGrid); // Das gesamte Array an die Flucht-Funktion übergeben
+            this.threat = activeThreats[0]; // Behalten wir für die rote Debug-Linie
+            this.flee(activeThreats, staticGrid);
             return status;
         } else {
             this.threat = null;
@@ -93,10 +125,7 @@ class HerbivoreCell extends AnimalCell {
         } else if ((this.ignoreTargetTimer || 0) <= 0) {
             // Wir aktualisieren das Ziel regelmäßig (alle 15 Frames) oder wenn wir keins haben
             if (!this.target || !this.target.alive || this.age % 15 === 0) {
-                const plants = staticGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange).filter(e =>
-                    e.type === 'plant' && e.alive
-                );
-                const newTarget = this.findClosestInSight(plants, this.target);
+                const newTarget = this.findClosestInSight(visiblePlants, this.target);
 
                 if (newTarget) {
                     this.target = newTarget;
@@ -109,11 +138,8 @@ class HerbivoreCell extends AnimalCell {
             this.target = null;
         }
 
-        // Hindernisse (Steine/Pflanzen) aus dem Static Grid laden
-        const obstacles = staticGrid.getEntitiesInArea(this.x, this.y, 60);
-
         // Ziel und Hindernisse übergeben
-        this.move(this.target, false, obstacles);
+        this.move(this.target, false, moveObstacles);
         return status;
     }
 }

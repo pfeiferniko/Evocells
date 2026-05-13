@@ -119,18 +119,14 @@ function draw2D() {
             // --- NEU: Den farbigen Punkt auf den Schwanz zeichnen (Lebensanzeige) ---
             if (e.type === 'tail' && e.dotColor) {
 
-                // 1. Wir klettern den "Baum" hoch, um das Haupt-Tier (Kopf) zu finden
-                let rootAnimal = e.parent;
-                while (rootAnimal && rootAnimal.type === 'tail') {
-                    rootAnimal = rootAnimal.parent;
-                }
+                let rootAnimal = e.rootAnimal;
 
                 let displayColor = e.dotColor; // Standard: Farbig
 
                 // 2. Lebensanzeige berechnen
                 if (rootAnimal && rootAnimal.tailSegments && typeof rootAnimal.getMaxEnergy === 'function') {
                     // Das wievielte Glied ist das hier im Schwanz? (0 ist direkt am Körper)
-                    const index = rootAnimal.tailSegments.indexOf(e);
+                    const index = e.segmentIndex;
                     const total = rootAnimal.tailSegments.length;
 
                     // Energie des Tieres in Prozent (0.0 bis 1.0)
@@ -211,16 +207,30 @@ function draw2D() {
 
             // --- Debug-Linien für Fluchtverhalten ---
             if (showDebugLines) {
-                if (e.threat && e.threat.alive) {
-                    // Rote gestrichelte Linie zum Räuber (vor wem flieht es?)
-                    ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-                    ctx.lineWidth = 1;
+                if (e.activeThreats && e.activeThreats.length > 0) {
+                    // Rote gestrichelte Linien zu ALLEN Räubern im Rudel (vor wem flieht es?)
+
+                    if (e instanceof CarnivoreCell) {
+                        ctx.strokeStyle = 'rgba(255, 0, 255, 1)';
+                        ctx.lineWidth = 2;
+                    } else {
+                        ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+                        ctx.lineWidth = 1;
+                    }
+
                     ctx.setLineDash([5, 5]);
-                    ctx.beginPath();
-                    ctx.moveTo(e.x, e.y);
-                    ctx.lineTo(e.threat.x, e.threat.y);
-                    ctx.stroke();
-                    ctx.setLineDash([]); // Reset
+
+                    e.activeThreats.forEach(threat => {
+                        // Sicherstellen, dass dieser spezifische Räuber noch lebt
+                        if (threat && threat.alive) {
+                            ctx.beginPath();
+                            ctx.moveTo(e.x, e.y);
+                            ctx.lineTo(threat.x, threat.y);
+                            ctx.stroke();
+                        }
+                    });
+
+                    ctx.setLineDash([]); // Reset ganz am Ende
                 }
 
                 if (e.target && e instanceof CarnivoreCell) {

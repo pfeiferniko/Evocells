@@ -21,8 +21,8 @@ window.SETTINGS = {
     // ==========================================
     SPAWN_HERBIVORES: 70, // Startanzahl Pflanzenfresser
     SPAWN_CARNIVORES: 5,  // Startanzahl Fleischfresser
-    SPAWN_SNAKES: 1,
-    SPAWN_SUPER_STONES: 3, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
+    SPAWN_SNAKES: 5,
+    SPAWN_SUPER_STONES: 5, // Anzahl lila leuchtende Super-Steine (wachsen sehr schnell)
     SPAWN_NORMAL_STONES: 50, // Anzahl normale Steine
 
     // ==========================================
@@ -47,7 +47,19 @@ window.SETTINGS = {
     FLEE_PANIC_RADIUS_CARNIVORE: 1.5, // Multiplikator für den Aggro-Radius: Wann gerät ein Räuber vor einem größeren Räuber in Panik?
     FLEE_HYSTERESIS_BONUS: 200, // Wie viele Pixel wird der Fluchtradius erweitert, während das Tier bereits flieht? (Verhindert hin- und herwechseln)
 
-    CARN_AGGRO_RADIUS_MULTIPLIER: 2.0,
+    // ==========================================
+    // AGGRO & FLUCHT (ABSOLUTE WERTE)
+    // ==========================================
+    // Wie nah muss ein Rivale kommen, damit der Jäger angreift?
+    CARN_AGGRO_RADIUS_BASE: 120,
+    CARN_AGGRO_RADIUS_PER_SIZE: 5, // (z.B. Größe 10 = +50 Pixel)
+
+    // Wie weit schaut der Jäger nach GEFAHR (größeren Jägern)?
+    // WICHTIG: Dieser Wert MUSS immer deutlich größer sein als der Aggro-Radius,
+    // damit die Kleinen fliehen, bevor die Großen angreifen!
+    CARN_PANIC_RADIUS_BASE: 250,
+    CARN_PANIC_RADIUS_PER_SIZE: 0, // Fluchtradius sollte für Babys genauso groß sein wie für Erwachsene
+
 
     // ==========================================
     // JAGD-VERHALTEN (HUNTING)
@@ -61,10 +73,10 @@ window.SETTINGS = {
     // ==========================================
     // BEWEGUNG & FESTSTECKEN (STUCK)
     // ==========================================
-    STUCK_TIMER_MAX: 50,      // Wie viele Frames (ca. 60 pro Sek) wird gemessen, bevor das Tier als "feststeckend" gilt?
+    STUCK_TIMER_MAX: 70,      // Wie viele Frames (ca. 60 pro Sek) wird gemessen, bevor das Tier als "feststeckend" gilt?
     STUCK_MIN_MOVEMENT: 15,   // Wie viele Pixel Strecke muss sich ein Tier in dieser Zeit insgesamt bewegt haben?
-    TURN_SPEED_NORMAL: 0.2,   // Maximale Drehung pro Frame bei normaler Fortbewegung
-    TURN_SPEED_COMBAT: 1.0,   // Maximale Drehung pro Frame im Nahkampf/beim Fressen (Distanz < 30)
+    TURN_SPEED_NORMAL: 0.1,   // Maximale Drehung pro Frame bei normaler Fortbewegung
+    TURN_SPEED_COMBAT: 0.5,   // Maximale Drehung pro Frame im Nahkampf/beim Fressen (Distanz < 30)
 
     // ==========================================
     // ALTERUNG (AGING)
@@ -77,7 +89,7 @@ window.SETTINGS = {
     // ==========================================
     HERB_MAX_SIZE_BASE: 4,      // Start-Maximalgröße Pflanzenfresser
     CARN_MAX_SIZE_BASE: 7,     // Start-Maximalgröße rote Jäger
-    SNAKE_MAX_SIZE_BASE: 6,     // Start-Maximalgröße Schlangen
+    SNAKE_MAX_SIZE_BASE: 4,     // Start-Maximalgröße Schlangen
 
     MUTATION_SIZE_STEP: 2.0,    // Wie stark die Größe pro Mutation schwanken kann (Bereich: +/- 1.0)
     MUTATION_MAX_SIZE_CAP: 9,  // Die absolute Obergrenze, die ein Tier durch Mutation erreichen kann
@@ -93,7 +105,7 @@ window.SETTINGS = {
     GENOME_MAX_ENERGY: 100,
     GENOME_MIN_AGE_REPRO: 1000,
 
-// ==========================================
+    // ==========================================
     // PFLANZEN-WACHSTUM
     // ==========================================
     PLANT_MAX_SIZE_SUPER_BASE: 10,
@@ -149,10 +161,10 @@ window.SETTINGS = {
     // SCHLANGEN (SNAKE)
     // ==========================================
     SNAKE_LITTER_SIZE: 1,       // Wie viele Babys bekommt die Schlange PRO Wurf?
-    SNAKE_MAX_REPRODUCTIONS: 2, // Wie oft in ihrem LEBEN darf sie werfen?
-    SNAKE_BASE_SPEED: 1.7,      // Schlangen sind etwas schneller
+    SNAKE_MAX_REPRODUCTIONS: 1, // Wie oft in ihrem LEBEN darf sie werfen?
+    SNAKE_BASE_SPEED: 1.5,      // Schlangen sind etwas schneller
     SNAKE_SPEED_VARIANCE: 0.1,
-    SNAKE_COOLDOWN_REPRO: 30000, // <--- NEU: Extrem langer Cooldown
+    SNAKE_COOLDOWN_REPRO: 10000, // <--- NEU: Extrem langer Cooldown
 
 
 };

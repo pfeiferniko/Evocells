@@ -58,12 +58,12 @@ class PlantSegment extends BaseCell {
         // --- NEUE FARB-LOGIK ---
         if (this.baseColor) {
             // Wenn eine Farbe übergeben wurde, variieren wir die RGB-Werte leicht (+/- 20)
-            const r = Math.max(0, Math.min(255, this.baseColor.r + Math.floor((Math.random() - 0.5) * 40)));
-            const g = Math.max(0, Math.min(255, this.baseColor.g + Math.floor((Math.random() - 0.5) * 40)));
-            const b = Math.max(0, Math.min(255, this.baseColor.b + Math.floor((Math.random() - 0.5) * 40)));
+            const r = Math.max(0, Math.min(255, this.baseColor.r + Math.floor((Math.random() - 0.5) * 80)));
+            const g = Math.max(0, Math.min(255, this.baseColor.g + Math.floor((Math.random() - 0.5) * 80)));
+            const b = Math.max(0, Math.min(255, this.baseColor.b + Math.floor((Math.random() - 0.5) * 80)));
             this.color = `rgb(${r}, ${g}, ${b})`;
         } else if (this.isSuper) {
-            const lightness = Math.floor(35 + Math.random() * 20);
+            const lightness = Math.floor(25 + Math.random() * 40);
             this.color = `hsl(282, 100%, ${lightness}%)`;
         } else {
             const hue = Math.floor(110 + Math.random() * 20);
@@ -170,12 +170,16 @@ class TailSegment extends BaseCell {
 
         this.spineX = x;
         this.spineY = y;
+
+        let root = parent;
+        while (root && root.type === 'tail') {
+            root = root.parent;
+        }
+        this.rootAnimal = root;
     }
 
     update() {
         if (this.parent) {
-            // NEU: Das Segment folgt immer dem ZENTRALEN Rückgrat des Elternteils,
-            // nicht dessen echter, zur Seite verschobener Position!
             const targetX = this.parent.spineX !== undefined ? this.parent.spineX : this.parent.x;
             const targetY = this.parent.spineY !== undefined ? this.parent.spineY : this.parent.y;
 
@@ -191,21 +195,24 @@ class TailSegment extends BaseCell {
                 this.spineY = targetY - Math.sin(angle) * targetDist;
             }
 
-            // --- NEU: Wiggle-Effekt berechnen ---
-            // 1. Wir suchen das Haupt-Tier, um seinen Takt (wigglePhase) abzufragen
-            let rootAnimal = this.parent;
-            while (rootAnimal && rootAnimal.type === 'tail') {
-                rootAnimal = rootAnimal.parent;
+            // --- DER FIX: Lazy Loading ---
+            // Wir suchen das Haupt-Tier exakt 1x im ganzen Leben des Schwanzes.
+            // Sobald es gefunden wurde, wird diese Schleife nie wieder ausgeführt!
+            if (!this.rootAnimal) {
+                let root = this.parent;
+                while (root && root.type === 'tail') {
+                    root = root.parent;
+                }
+                this.rootAnimal = root;
             }
+
+            // Variable für den restlichen Code definieren
+            const rootAnimal = this.rootAnimal;
 
             let wiggleOffset = 0;
             if (rootAnimal && rootAnimal.wigglePhase !== undefined) {
                 // Versatz der Welle: Sorgt dafür, dass die Welle nach hinten durchläuft
                 const phaseDelay = this.depth * 0.6;
-
-                // --- NEU: Amplitude für lange Schwänze deckeln ---
-                // Die Schwung-Stärke steigt nur bis zum 5. Glied an.
-                // Alle weiteren Glieder schwingen mit dieser Maximalkraft gleichmäßig weiter.
                 const effectiveWiggleDepth = Math.min(this.depth, 5);
                 const amplitude = effectiveWiggleDepth * 1.2;
 
@@ -214,18 +221,15 @@ class TailSegment extends BaseCell {
 
             const perpAngle = angle + Math.PI / 2; // 90 Grad Winkel zur Wirbelsäule
 
-            // --- NEU: Wiggle auf die Position anwenden ---
             if (this.branch !== 0) {
                 const spreadStopDepth = 8;
                 const effectiveDepth = Math.min(this.depth, spreadStopDepth);
                 const branchProgress = Math.max(0, effectiveDepth - 3);
                 const spread = Math.sqrt(branchProgress) * 4.5;
 
-                // Wir addieren den wiggleOffset zur bestehenden Stimmgabel-Spreizung
                 this.x = this.spineX + Math.cos(perpAngle) * ((spread * this.branch) + wiggleOffset);
                 this.y = this.spineY + Math.sin(perpAngle) * ((spread * this.branch) + wiggleOffset);
             } else {
-                // Ein gerader Schwanz liegt auf dem Rückgrat PLUS dem Wiggle-Offset
                 this.x = this.spineX + Math.cos(perpAngle) * wiggleOffset;
                 this.y = this.spineY + Math.sin(perpAngle) * wiggleOffset;
             }

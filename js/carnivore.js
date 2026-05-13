@@ -41,188 +41,234 @@ class CarnivoreCell extends AnimalCell {
 
         this.checkTargetTimeout(); // Überprüfen, ob sie feststeckt
 
-        // // Ziel aufgeben, falls die Beute inzwischen wächst und plötzlich größer ist
-        // if (this.target && this.target.size > this.size && !(this.target instanceof CarnivoreCell)) {
-        //     this.target = null;
-        // }
+        // --- 1. RADIEN BERECHNEN ---
+        const aggroRadius = window.SETTINGS.CARN_AGGRO_RADIUS_BASE + (this.size * window.SETTINGS.CARN_AGGRO_RADIUS_PER_SIZE);
+        let basePanicRadius = window.SETTINGS.CARN_PANIC_RADIUS_BASE + (this.size * window.SETTINGS.CARN_PANIC_RADIUS_PER_SIZE);
 
-        // Wir berechnen den Aggro-Radius zuerst, da er die Basis für alles andere ist
-        // Wir berechnen den Aggro-Radius zuerst, da er die Basis für alles andere ist
-        // NEU: Multipliziert mit dem Wert aus den Settings!
-        const aggroRadius = (this.size * 4 + 50) * window.SETTINGS.CARN_AGGRO_RADIUS_MULTIPLIER;
+        const pMult = this.panicMultiplier !== undefined ? this.panicMultiplier : 1.0;
+        let panicRadius = basePanicRadius * pMult;
 
-        // --- NEU: Fluchtradius gekoppelt an Aggro-Radius ---
-        // Er sieht die Bedrohung nun DEUTLICH weiter weg (wird in den Settings eingestellt)
-        let panicRadius = aggroRadius * window.SETTINGS.FLEE_PANIC_RADIUS_CARNIVORE;
-
-        // --- HYSTERESE-BONUS ---
-        if (this.threat) {
+        if (this.activeThreats && this.activeThreats.length > 0) {
             panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
         }
 
-        // Suchradius für das Grid (das größte von beiden)
-        const entitiesInArea = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius + 50);
+        // --- 2. SINGLE SOURCE OF TRUTH (Grid-Abfrage) ---
+        const maxRadius = Math.max(panicRadius + 50, this.genome.sightRange, 60);
+        const maxRadiusSq = maxRadius * maxRadius;
+        const panicRadiusSq = panicRadius * panicRadius;
 
-        // --- 1. FLUCHT VOR GRÖSSEREN RÄUBERN ---
-        const previousThreat = this.threat; // <--- NEU: Alten Verfolger für diesen Frame kurz merken!
-        this.threat = null;
+        const allDynamic = dynamicGrid.getEntitiesInArea(this.x, this.y, maxRadius);
+        const allStatic = staticGrid.getEntitiesInArea(this.x, this.y, maxRadius);
 
-        // --- NEU: Hindernisse für den Flucht-Sicht-Check laden ---
-        const localObstacles = staticGrid.getEntitiesInArea(this.x, this.y, panicRadius).filter(e =>
-            (e.type === 'plant' || e.type === 'stone') && e.alive !== false
-        );
+        const entitiesInArea = [];
+        const huntEntities = [];
+        const localObstacles = [];
+        const moveObstacles = [];
 
-        // Fluchtinstinkt greift erst, wenn es kein Baby mehr ist
+        for (let i = 0; i < allStatic.length; i++) {
+            const e = allStatic[i];
+            if (e.alive !== false && (e.type === 'plant' || e.type === 'stone')) {
+                const dx = e.x - this.x;
+                const dy = e.y - this.y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= maxRadiusSq) {
+                    if (distSq <= panicRadiusSq) localObstacles.push(e);
+                    if (distSq <= 3600) moveObstacles.push(e);
+                }
+            }
+        }
+
+        for (let i = 0; i < allDynamic.length; i++) {
+            const e = allDynamic[i];
+            if (e.alive !== false && e !== this) {
+                const dx = e.x - this.x;
+                const dy = e.y - this.y;
+                const distSq = dx * dx + dy * dy;
+                if (distSq <= maxRadiusSq) {
+                    if (distSq <= (panicRadius + 50) * (panicRadius + 50)) entitiesInArea.push(e);
+                    if (distSq <= this.genome.sightRange * this.genome.sightRange) huntEntities.push(e);
+                }
+            }
+        }
+
+        // =========================================================
+        // --- 4. FLUCHTVERHALTEN ---
+        // =========================================================
+        const previousThreats = this.activeThreats || [];
+        let activeThreats = [];
+
         if (this.berserkTimer <= 0) {
-            const largerPredators = entitiesInArea.filter(e =>
-                e instanceof CarnivoreCell &&
-                e.alive &&
-                e !== this &&
-                e.size > this.size &&
-                !e.isResting &&
-                e.reproductionCount < e.maxReproductions &&
-                (e.target === this || previousThreat === e)
+
+            // --- NEU: Verletzungs-Check ---
+            // Wenn die Energie unter 50% fällt, gilt das Tier als verletzt/schwach
+            const isInjured = this.energy < this.getMaxEnergy() * 0.5;
+
+            // Ich habe 'largerPredators' zu 'threateningPredators' umbenannt, da es jetzt genauer passt
+            const threateningPredators = entitiesInArea.filter(e =>
+                e instanceof CarnivoreCell && e.alive && e !== this &&
+
+                // --- NEU: Die erweiterte Größen-Logik ---
+                // Flucht wenn: Gegner ist GRÖSSER -> ODER -> (Gegner ist GLEICH GROSS und wir sind verletzt)
+                (e.size > this.size || (isInjured && e.size >= this.size)) &&
+
+                !e.isResting && e.reproductionCount < e.maxReproductions &&
+                (e.constructor !== this.constructor || (e.constructor === this.constructor && this.isAdult()))
             );
 
-            let activeThreats = [];
-
-            for (const p of largerPredators) {
+            for (let i = 0; i < threateningPredators.length; i++) {
+                const p = threateningPredators[i];
                 const dx = p.x - this.x;
                 const dy = p.y - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-
-                if (dist <= panicRadius) {
-                    // --- DER FIX: Objektpermanenz auch für kleine Räuber ---
-                    if (this.hasLineOfSight(p, localObstacles) || p === previousThreat) {
+                if ((dx * dx + dy * dy) <= panicRadiusSq) {
+                    if (this.hasLineOfSight(p, localObstacles) || previousThreats.includes(p)) {
                         activeThreats.push(p);
                     }
                 }
             }
 
+            this.activeThreats = activeThreats;
             if (activeThreats.length > 0) {
-                this.threat = activeThreats[0]; // Für Hysterese/Debug-Linie
-                this.flee(activeThreats, staticGrid); // Das gesamte Array übergeben
-                return status;
-            } else {
-                this.threat = null;
-                this.currentFleeTarget = null;
+                this.threat = activeThreats[0];
+                this.flee(activeThreats, staticGrid);
+                return status; // Bricht hier ab, Tier flieht und kämpft nicht!
             }
         } else {
-            this.currentFleeTarget = null;
             this.berserkTimer--;
         }
 
-        // --- NEU: Verdauungspause mit Hysterese (An bei >90%, Aus bei <80%) ---
-        // 1. Koma schaltet sich EIN, wenn das Tier extrem voll ist UND der Timer läuft
-        if (this.energy > this.getMaxEnergy() * 0.9 && this.birthCooldown > 0 && this.isAdult()) {
-            this.isResting = true;
-        }
-        // 2. Koma schaltet sich AUS, wenn die Energie unter 80% fällt ODER der Timer abläuft
-        else if (this.energy < this.getMaxEnergy() * 0.7 || this.birthCooldown <= 0 || this.berserkTimer > 0) {
-            this.isResting = false;
-        }
+        // =========================================================
+        // --- 5. KRIEG & REVIERVERHALTEN (Höchste Priorität) ---
+        // =========================================================
+        let rivalTarget = null;
 
-        if (this.isResting) {
-            // Tier ist im Fresskoma und entspannt sich: Lass die aktuelle Beute los!
-            this.target = null;
-            // --- NEU: Altersschwäche ---
-        } else if (this.reproductionCount >= this.maxReproductions) {
-            // Das Tier ist zu alt für Jagd und Revierkämpfe
-            this.target = null;
-        } else {
+        // Tier muss gesund genug für Kämpfe sein (>80%)
+        const isHealthyForFight = this.energy > this.getMaxEnergy() * 0.8;
 
-            // --- 2. REVIERVERHALTEN (Alpha-Kämpfe) ---
-            const isAdult = this.size >= this.genome.maxSize * 0.85;
+        if (this.isAdult() && this.attacksCarnivores && isHealthyForFight) {
+            const aggroRadiusSq = aggroRadius * aggroRadius;
+            let minDistSq = Infinity;
 
-            // Wenn unser aktuelles Ziel ein Rivale ist, aber er flieht
-            if (this.target && this.target instanceof CarnivoreCell) {
+            // 1. Suche nach Rivalen oder verfeindeten Rassen
+            for (let i = 0; i < huntEntities.length; i++) {
+                const e = huntEntities[i];
+                if (e instanceof CarnivoreCell && e.alive && e !== this) {
+
+                    const isSameSpecies = (e.constructor === this.constructor);
+                    let isValidTarget = false;
+                    let effectiveAggroRadiusSq = aggroRadiusSq;
+
+                    if (isSameSpecies) {
+                        // --- ARTGENOSSE (Revierkampf) ---
+                        // Nur erwachsene Tiere bekämpfen, die eine ähnliche Größe haben (keine Babys mobben)
+                        if (e.isAdult() && e.size <= this.size && e.size >= this.size * 0.7) {
+                            isValidTarget = true;
+                            effectiveAggroRadiusSq = aggroRadiusSq * 0.64; // 80% Radius (0.8 * 0.8 = 0.64)
+                        }
+                    } else {
+                        // --- ANDERE RASSE (Vernichtungskrieg) ---
+                        // Voller Radius! Alles angreifen, was schwächer ist, um die Konkurrenz auszurotten (auch Babys!)
+                        if (e.size <= this.size) {
+                            isValidTarget = true;
+                            effectiveAggroRadiusSq = aggroRadiusSq; // 100% Radius
+                        }
+                    }
+
+                    if (isValidTarget) {
+                        const dx = e.x - this.x;
+                        const dy = e.y - this.y;
+                        const distSq = dx * dx + dy * dy;
+
+                        // Ist er in dem für ihn gültigen Radius und haben wir Sichtlinie?
+                        if (distSq <= effectiveAggroRadiusSq && distSq < minDistSq) {
+                            if (this.hasLineOfSight(e, localObstacles)) {
+                                minDistSq = distSq;
+                                rivalTarget = e;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 2. Bestehendes Ziel validieren (Muss LEBEN, nah genug sein und Sichtlinie haben)
+            if (!rivalTarget && this.target && this.target instanceof CarnivoreCell && this.target.alive) {
+                // Welchen Radius nutzen wir fürs Loslassen? (1.5x des normalen Radius)
+                const isSameSpeciesTarget = (this.target.constructor === this.constructor);
+                const dropRadiusSq = isSameSpeciesTarget ? (aggroRadiusSq * 1.5) : (aggroRadiusSq * 2.25);
+
                 const dx = this.target.x - this.x;
                 const dy = this.target.y - this.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist > aggroRadius * 1.5) {
+                const distSq = dx * dx + dy * dy;
+
+                // Verfolgung abbrechen, wenn er zu weit flieht oder sich versteckt
+                if (distSq <= dropRadiusSq && this.hasLineOfSight(this.target, localObstacles)) {
+                    rivalTarget = this.target;
+                } else {
                     this.target = null;
                 }
             }
+        }
 
-            // NEU: Prüfe, ob das Tier überhaupt Revierkämpfe macht
-            if (isAdult && this.attacksCarnivores && (!this.target || !(this.target instanceof CarnivoreCell))) {
-                const nearbyRivals = entitiesInArea.filter(e =>
-                    e instanceof CarnivoreCell &&
-                    e.alive &&
-                    e !== this &&
-                    (e.isAdult() || e.constructor !== this.constructor) &&
-                    e.size <= this.size &&
-                    e.size >= this.size * 0.7
-                );
-
-                let closestRival = null;
-                let minDist = Infinity;
-
-                for (const rival of nearbyRivals) {
-                    const dist = Math.sqrt((rival.x - this.x)**2 + (rival.y - this.y)**2);
-                    if (dist <= aggroRadius && dist < minDist) {
-                        minDist = dist;
-                        closestRival = rival;
-                    }
-                }
-
-                if (closestRival) {
-                    this.target = closestRival;
-                    this.targetTimer = 0;
-                }
+        // Rivalen-Priorität anwenden
+        if (rivalTarget) {
+            this.target = rivalTarget;
+            this.isResting = false;
+            this.ignoreTargetTimer = 0;
+            this.targetTimer = 0;
+        }
+        else {
+            // =========================================================
+            // --- 6. RUHEPHASEN & ALTER ---
+            // =========================================================
+            if (this.energy > this.getMaxEnergy() * 0.9 && this.birthCooldown > 0 && this.isAdult()) {
+                this.isResting = true;
+            } else if (this.energy < this.getMaxEnergy() * 0.7 || this.birthCooldown <= 0 || this.berserkTimer > 0) {
+                this.isResting = false;
             }
 
-            // --- 3. NORMALE JAGD ---
-            if ((this.ignoreTargetTimer || 0) <= 0) {
-                // --- NEU: Nachtruhe für Raubtiere ---
-                // Tag-Zeit: 0.0 (Mitternacht) -> 0.25 (Sonnenaufgang) -> 0.5 (Mittag) -> 0.75 (Sonnenuntergang)
-                const timeOfDay = typeof window.dayTime !== 'undefined' ? (window.dayTime % 1) : 0.5;
-                const isNight = (timeOfDay < 0.25 || timeOfDay > 0.75);
+            if (this.isResting || this.reproductionCount >= this.maxReproductions) {
+                this.target = null;
+            } else {
+                // =========================================================
+                // --- 7. JAGD (Pflanzenfresser) ---
+                // =========================================================
+                if ((this.ignoreTargetTimer || 0) <= 0) {
+                    const timeOfDay = typeof window.dayTime !== 'undefined' ? (window.dayTime % 1) : 0.5;
+                    const isNight = (timeOfDay < 0.25 || timeOfDay > 0.75);
 
-                if (isNight && (!this.target || !this.target.alive)) {
-                      // Nachts im Dunkeln: Wenn wir kein Ziel haben oder es gerade gefressen wurde, suchen wir kein neues!
-                      this.target = null;
-                } else if (!isNight && (!this.target || !this.target.alive || this.age % 60 === 0)) {
+                    // --- NEU: Darf das Tier jetzt jagen? ---
+                    // Ja, wenn es NICHT Nacht ist ODER wenn das Tier nachtaktiv ist!
+                    const canHuntNow = !isNight || this.huntsAtNight;
 
-                    // Für die Jagd schauen wir wieder etwas weiter
-                    const huntEntities = dynamicGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
+                    if (canHuntNow && (!this.target || !this.target.alive || this.age % 60 === 0)) {
+                        const herbivores = [];
+                        for (let i = 0; i < huntEntities.length; i++) {
+                            const e = huntEntities[i];
+                            if (e instanceof HerbivoreCell && e.alive && e.size <= this.size) {
+                                herbivores.push(e);
+                            }
+                        }
+                        let newTarget = this.findBestPreyInSight ? this.findBestPreyInSight(herbivores, dynamicGrid, staticGrid, this.target) : herbivores[0];
 
-                    const herbivores = huntEntities.filter(e =>
-                        e instanceof HerbivoreCell &&
-                        e.alive &&
-                        e.size <= this.size
-                    );
-                    let newTarget = this.findBestPreyInSight(herbivores, dynamicGrid, staticGrid, this.target);
-
-                    // Nur nach anderen Räubern suchen, wenn es erlaubt ist
-                    if (!newTarget && this.attacksCarnivores) {
-                        const smallerCarnivores = huntEntities.filter(e =>
-                            e instanceof CarnivoreCell &&
-                            e.alive &&
-                            e !== this &&
-                            e.size <= this.size
-                        );
-                        newTarget = this.findBestPreyInSight(smallerCarnivores, dynamicGrid, staticGrid, this.target);
-                    }
-
-                    if (newTarget) {
-                        this.target = newTarget;
-                        this.targetTimer = 0;
-                    } else if (!this.target || !this.target.alive) {
+                        if (newTarget) {
+                            this.target = newTarget;
+                            this.targetTimer = 0;
+                        } else if (!this.target || !this.target.alive) {
+                            this.target = null;
+                        }
+                    } else if (!canHuntNow && (!this.target || !this.target.alive)) {
+                        // Wenn das Tier jetzt nicht jagen darf (weil es Nacht ist und es KEIN huntsAtNight hat)
                         this.target = null;
                     }
+                } else {
+                    this.target = null;
                 }
-            } else {
-                this.target = null;
             }
-        } // <--- ENDE DER VERDAUUNGSPAUSE (else-Block zu)
+        }
 
-        // --- KORREKTUR: Hindernisse aus dem Static Grid holen! ---
-        const obstacles = staticGrid.getEntitiesInArea(this.x, this.y, 60);
-
-        // Nutzt target (Essen). Wenn kein Essen da ist, nutzt es waypoint (freier Platz).
-        // Wir übergeben 'entitiesInArea', damit die Boids-Ausweich-KI auch hier greift!
-        this.move(this.target || this.waypoint, false, obstacles);
+        // =========================================================
+        // --- 8. FINALE BEWEGUNG ---
+        // =========================================================
+        this.move(this.target || this.waypoint, false, moveObstacles);
         return status;
     }
 }

@@ -11,20 +11,38 @@ class SnakeCell extends CarnivoreCell {
         // Die Pünktchen auf dem Rücken machen wir dunkelblau für Kontrast
         this.dotColor = `hsl(200, 80%, 20%)`;
 
-        // Optional: Schlangen haben vielleicht einen etwas effizienteren Stoffwechsel
-        this.metabolismMultiplier = 0.4;
 
         // --- NEU: Schlangen haben einen längeren Schwanz ---
         // (Größe * 2) + 2 -> Bei Größe 3 sind das 8 Glieder.
         this.tailLengthMultiplier = 3.0;
         this.tailLengthOffset = 3;
+        this.startTailLength = 8;
 
-        this.attacksCarnivores = true;
-        this.genome.sightRange *= 1.5;
+        if (this.maxSize > window.SETTINGS.SNAKE_MAX_SIZE_BASE) {
+            this.maxSize = window.SETTINGS.SNAKE_MAX_SIZE_BASE;
+        }
+        this.panicMultiplier = 0.5;
+        this.attacksCarnivores = false;
+        this.metabolismMultiplier = 0.3;
+        this.huntsAtNight = true;
 
         this.maxReproductions = window.SETTINGS.SNAKE_MAX_REPRODUCTIONS;
         this.birthCooldown = window.SETTINGS.SNAKE_COOLDOWN_REPRO;
+
+
+       /* // Optional: Schlangen haben vielleicht einen etwas effizienteren Stoffwechsel
+        this.metabolismMultiplier = 0.4;
+
+        this.panicMultiplier = 0.6;
+        this.huntsAtNight = false;
+
+        this.attacksCarnivores = true;
+        //this.genome.sightRange *= 1.5;
+
+
         this.startTailLength = 8; // Schlangenbabys sind sofort lang!
         this.speedMultiplier = 1.1;
+*/
+
     }
 }
