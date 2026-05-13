@@ -1022,7 +1022,7 @@ function update() {
 
 
                 // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
-                if (!e.isEaten ) { // && Math.random() > 0.7 && e.reproductionCount < e.maxReproductions
+                /*if (!e.isEaten ) { // && Math.random() > 0.7 && e.reproductionCount < e.maxReproductions
 
                     // NEU: Farbe des Tiers auslesen (z.B. aus "rgb(200, 100, 50)" die Zahlen holen)
                     const rgbMatch = e.color.match(/\d+/g);
@@ -1041,7 +1041,7 @@ function update() {
                     plant.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL * 0.75;
                     newEntities.push(plant);
                     staticGrid.add(plant);
-                }
+                }*/
 
                 isAlive = false;
                 e.alive = false;

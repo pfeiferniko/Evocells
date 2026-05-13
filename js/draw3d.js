@@ -464,9 +464,26 @@ function initPlankton3D() {
 function draw3D() {
     if (!scene) init3D();
 
-    if (renderer.domElement.width !== canvas3D.width || renderer.domElement.height !== canvas3D.height) {
-        renderer.setSize(canvas3D.width, canvas3D.height, false);
-        camera.aspect = canvas3D.width / canvas3D.height;
+// --- Knackscharfe, dynamische Monitor-Auflösung ---
+    const canvas = renderer.domElement;
+
+    // 1. Hole den Pixel-Faktor aus deinem Menü in main.js (z. B. 1.0, 0.8 etc.)
+    const factor = (typeof pixelModes !== 'undefined' && typeof currentPixelMode !== 'undefined')
+        ? pixelModes[currentPixelMode].factor
+        : 1.0;
+
+    // 2. Native Pixeldichte des Monitors auslesen (Retina/4K-Displays haben hier 1.5, 2.0 etc.)
+    const pixelRatio = window.devicePixelRatio || 1;
+
+    // 3. Berechnen: Wie groß wird das Canvas GERADE in diesem Moment vom CSS gezeichnet?
+    const displayWidth  = Math.floor(canvas.clientWidth * pixelRatio * factor);
+    const displayHeight = Math.floor(canvas.clientHeight * pixelRatio * factor);
+
+    // 4. Hat sich die echte Fenstergröße geändert? Dann 3D-Engine anpassen!
+    if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
+        // Das 'false' ist extrem wichtig, damit Three.js nicht das CSS-Layout sprengt
+        renderer.setSize(displayWidth, displayHeight, false);
+        camera.aspect = displayWidth / displayHeight;
         camera.updateProjectionMatrix();
     }
 
