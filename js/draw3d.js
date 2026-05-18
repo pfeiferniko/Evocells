@@ -398,7 +398,6 @@ function updateTrackingCamera() {
     }
 }
 
-// --- OPTIMIERTER 3D Tagesablauf (Original-Position mit leichtem Pendeln) ---
 function updateDayNight3D() {
     if (!light || !ambientLight) return;
 
@@ -409,8 +408,12 @@ function updateDayNight3D() {
     const targetX = (light.target && light.target.position.x) ? light.target.position.x : (window.WORLD_WIDTH / 2);
     const targetZ = (light.target && light.target.position.z) ? light.target.position.z : (window.WORLD_HEIGHT / 2);
 
-    // X, Y und Z-Offset mal 4 genommen! Der Sonnen-Winkel bleibt dadurch absolut identisch.
-    light.position.x = targetX + Math.sin(window.dayTime * Math.PI * 2) * 1600;
+    // --- OPTIMIERUNG: Der Schwenk passt sich der Bildschirmbreite an ---
+    // Bei 2000 Breite (Querformat) schwenkt sie weiterhin 1600 Pixel.
+    // Bei 1000 Breite (Hochkant) schwenkt sie angenehme 800 Pixel.
+    const swingAmplitude = window.WORLD_WIDTH * 0.8;
+
+    light.position.x = targetX + Math.sin(window.dayTime * Math.PI * 2) * swingAmplitude;
     light.position.y = 800;
     light.position.z = targetZ - 2000;
 
