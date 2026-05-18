@@ -18,6 +18,8 @@ let mouseX = 0;
 let mouseY = 0;
 
 let entities = [];
+const newEntities = [];       // <--- NEU: Globaler Puffer
+const survivingEntities = []; // <--- NEU: Globaler Puffer
 let startTime = 0; // NEU: Merkt sich den Startzeitpunkt
 
 let globalHerbivoreCount = 0;
@@ -266,6 +268,7 @@ uiCanvas.addEventListener('mousedown', (e) => {
         }
         if (target) {
             if (target.type === 'plant' || target.type === 'stone') staticGrid.remove(target);
+            if (target.type === 'plant') target.unlink();
             target.alive = false;
             if (target.tailSegments) target.tailSegments.forEach(t => t.alive = false);
             createParticles(target.x, target.y, '#ffffff', 10, 2);
@@ -350,42 +353,6 @@ function init() {
 
 
 function generateInitialWorld2() {
-    /*const stones = [];
-
-    // 1. Steine generieren
-    for (let i = 0; i < 1; i++) {
-        const spawnX = Math.max(600, Math.random() * (WORLD_WIDTH - 600));
-        const spawnY = Math.max(300, Math.random() * (WORLD_HEIGHT - 300));
-        const size = 20 + Math.random() * 20;
-        const stone = new StoneCell(spawnX, spawnY, size, false);
-        stones.push(stone);
-        entities.push(stone);
-        staticGrid.add(stone);
-    }
-
-    // 2. Pflanzen generieren
-    stones.forEach(targetStone => {
-        for (let i = 0; i < 2; i++) {
-            const angle = Math.random() * Math.PI * 2;
-            const dist = targetStone.size + 5 + Math.random() * 15;
-            let spawnX = Math.max(50, Math.min(WORLD_WIDTH - 50, targetStone.x + Math.cos(angle) * dist));
-            let spawnY = Math.max(50, Math.min(WORLD_HEIGHT - 50, targetStone.y + Math.sin(angle) * dist));
-            const plant = new PlantSegment(spawnX, spawnY, null, targetStone.isSuper);
-            entities.push(plant);
-            staticGrid.add(plant);
-        }
-    });
-
-    // 3. Tiere generieren
-    for (let i = 0; i < 5; i++) {
-        const initialGenome = new Genome();
-        initialGenome.speed = window.SETTINGS.HERB_BASE_SPEED + (Math.random() - 0.5) * window.SETTINGS.HERB_SPEED_VARIANCE * 2;
-        initialGenome.maxSize = window.SETTINGS.HERB_MAX_SIZE_BASE + (Math.random() - 0.5) * 2;
-        let herbivore = new HerbivoreCell(Math.random() * WORLD_WIDTH, Math.random() * WORLD_HEIGHT, initialGenome);
-        entities.push(herbivore);
-        addInitialTail(herbivore, entities);
-    }*/
-
     console.log("Entities created:", entities.length);
 }
 
@@ -394,7 +361,7 @@ function generateInitialWorld() {
 
     // 1. Steine generieren
     for (let i = 0; i < window.SETTINGS.SPAWN_SUPER_STONES; i++) {
-        const spawnX = Math.max(600, Math.random() * (WORLD_WIDTH - 600));
+        const spawnX = Math.max(300, Math.random() * (WORLD_WIDTH - 300));
         const spawnY = Math.max(300, Math.random() * (WORLD_HEIGHT - 300));
         const size = 20 + Math.random() * 20;
         const stone = new StoneCell(spawnX, spawnY, size, true);
@@ -495,23 +462,24 @@ function update() {
     }
 
     dynamicGrid.clear();
-    entities.forEach(e => {
-        if (e.type === 'animal') {
-            dynamicGrid.add(e);
-        }
-    });
 
     globalHerbivoreCount = 0;
     globalCarnivoreCount = 0;
     globalPlantCount = 0;
     globalGiantCount = 0;
 
+    // --- OPTIMIERUNG 1: Grid füllen und zählen in einem Durchlauf ---
     for (let i = 0; i < entities.length; i++) {
         const ent = entities[i];
+
         if (ent.alive !== false) {
+            if (ent.type === 'animal') {
+                dynamicGrid.add(ent);
+            }
+
             if (ent instanceof HerbivoreCell) {
                 globalHerbivoreCount++;
-                if (ent.isGiant) globalGiantCount++; // --- NEU: Riesen mitzählen ---
+                if (ent.isGiant) globalGiantCount++;
             } else if (ent instanceof CarnivoreCell) {
                 globalCarnivoreCount++;
             } else if (ent.type === 'plant') {
@@ -520,12 +488,14 @@ function update() {
         }
     }
 
-    const newEntities = [];
-    const survivingEntities = [];
+    newEntities.length = 0;
+    survivingEntities.length = 0;
 
     const isStartup = (Date.now() - startTime) < window.SETTINGS.STARTUP_PHASE_DURATION;
 
-    entities.forEach(e => {
+    // --- OPTIMIERUNG 2: High-Performance for-Schleife ---
+    for (let i = 0; i < entities.length; i++) {
+        const e = entities[i];
         let isAlive = true;
 
         if (e.type === 'animal') {
@@ -535,18 +505,18 @@ function update() {
             if (e.tailSegments && e.tailSegments.length > 0) {
                 const headSize = e.size;
 
-                // NEU: Wir richten uns nach der maximalen Tiefe für einen sauberen Übergang
                 let maxDepth = 0;
-                for (let i = 0; i < e.tailSegments.length; i++) {
-                    if (e.tailSegments[i].depth > maxDepth) maxDepth = e.tailSegments[i].depth;
+                for (let j = 0; j < e.tailSegments.length; j++) {
+                    if (e.tailSegments[j].depth > maxDepth) maxDepth = e.tailSegments[j].depth;
                 }
                 const targetSteps = maxDepth;
                 const step = (headSize - 1) / targetSteps;
 
-                e.tailSegments.forEach((t) => {
+                for (let j = 0; j < e.tailSegments.length; j++) {
+                    const t = e.tailSegments[j];
                     t.size = Math.max(1, headSize - t.depth * step);
                     t.update();
-                });
+                }
             }
 
             // Schwanz wachsen lassen (Hier passiert die Spaltung oder das Schlangen-Wachstum)
@@ -686,13 +656,16 @@ function update() {
                     if (rootAnimal === e) continue;
                 }
 
-
-                const dx = other.x - e.x;
-                const dy = other.y - e.y;
-                const distSq = dx * dx + dy * dy; // Keine Wurzel!
                 const minDist = e.size + (other.size || 2);
+                const dx = other.x - e.x;
+                // --- OPTIMIERUNG: Fast Fail X ---
+                if (Math.abs(dx) > minDist) continue;
 
-                // Wir vergleichen die quadrierten Werte
+                const dy = other.y - e.y;
+                // --- OPTIMIERUNG: Fast Fail Y ---
+                if (Math.abs(dy) > minDist) continue;
+
+                const distSq = dx * dx + dy * dy;
                 if (distSq < minDist * minDist && distSq > 0) {
                     // ERST JETZT, bei einer echten Kollision, ziehen wir die Wurzel für die Physik
                     const dist = Math.sqrt(distSq);
@@ -701,37 +674,8 @@ function update() {
                     // NEU: Die Abfrage "e.energy < e.getMaxEnergy()" ist weg. Sie fressen jetzt immer!
                     if (status !== 'reproduce' && status !== 'stationary') {
 
-                        // Herbivore eats Plant
-                        if (e instanceof HerbivoreCell && other.type === 'plant') {
-                            if (e.target === other) {
-                                // NEU: Pflanzen werden IMMER stückchenweise abgeknabbert, egal wie groß der Fresser ist.
-                                // 0.05 pro Frame bedeutet: Bei 60 FPS dauert es über 3 Sekunden,
-                                // um eine normalgroße Pflanze (Größe 10) komplett zu fressen.
-                                const biteAmount = Math.min((e.size * 0.02), other.size);
-
-                                other.size -= biteAmount; // Pflanze wird langsam kleiner
-                                e.energy += biteAmount; // Energie wird langsam hochgezählt
-
-                                if (Math.random() < 0.2) {
-                                    createParticles(other.x, other.y, other.color, 1);
-                                }
-
-                                // Energie am Maximum kappen
-                                e.energy = Math.min(e.getMaxEnergy(), e.energy);
-
-                                // Sehr sanftes, stetiges Wachstum beim Grasen
-                                if (e.size < e.maxSize) e.size += 0.002;
-
-                                // Pflanze stirbt erst, wenn nur noch ein winziger Rest übrig ist
-                                if (other.size < 0.5) {
-                                    other.alive = false;
-                                    staticGrid.remove(other);
-                                }
-                                eaten = true;
-                            }
-                        }
                         // --- NEU: Carnivore beißt in einen Schwanz ---
-                        else if (e instanceof CarnivoreCell && other.type === 'tail' && rootAnimal && e.size >= rootAnimal.size) {
+                        if (e instanceof CarnivoreCell && other.type === 'tail' && rootAnimal && e.size >= rootAnimal.size) {
                             if (e.target === other) {
                                 // Auch die Bremswirkung ist sanfter, sonst gefriert die Beute sofort ein
                                 rootAnimal.speedMultiplier = Math.max(0.02, rootAnimal.speedMultiplier - 0.02);
@@ -881,12 +825,14 @@ function update() {
             for (const other of nearbyStatic) {
                 if (other === e || !other.alive) continue;
 
-                const dx = other.x - e.x;
-                const dy = other.y - e.y;
-                const distSq = dx * dx + dy * dy; // Keine Wurzel!
                 const minDist = e.size + (other.size || 2);
+                const dx = other.x - e.x;
+                if (Math.abs(dx) > minDist) continue; // Fast Fail X
 
-                // Wir vergleichen die quadrierten Werte
+                const dy = other.y - e.y;
+                if (Math.abs(dy) > minDist) continue; // Fast Fail Y
+
+                const distSq = dx * dx + dy * dy;
                 if (distSq < minDist * minDist && distSq > 0) {
                     // ERST JETZT, bei einer echten Kollision, ziehen wir die Wurzel für die Physik
                     const dist = Math.sqrt(distSq);
@@ -895,7 +841,13 @@ function update() {
                     // --- HIER MUSS DER FRESS-CODE FÜR PFLANZEN HIN! ---
                     if (status !== 'reproduce' && status !== 'stationary') {
                         if (e instanceof HerbivoreCell && other.type === 'plant') {
-                            if (e.target === other) {
+
+                            // FIX: Friss jedes Blatt, das berührt wird, solange wir nicht vor einem Räuber fliehen!
+                            // Das verhindert, dass benachbarte Blätter wie eine unzerstörbare Wand wirken.
+                            if (e.target === other || !e.threat) {
+
+                                e.target = other; // Fokus direkt auf dieses Blatt setzen
+
                                 const biteAmount = Math.min((e.size * 0.02), other.size);
                                 other.size -= biteAmount;
                                 e.energy += biteAmount;
@@ -908,6 +860,7 @@ function update() {
                                 if (e.size < e.maxSize) e.size += 0.002;
 
                                 if (other.size < 0.5) {
+                                    other.unlink();
                                     other.alive = false;
                                     // GANZ WICHTIG: Die gefressene Pflanze aus dem Static Grid löschen!
                                     staticGrid.remove(other);
@@ -994,55 +947,6 @@ function update() {
                     });
                 }
 
-                // --- NEU: Diamant droppen, wenn es ein friedlicher Tod im Alter war ---
-                /*if (!window.isDemoMode && !e.isEaten && e.reproductionCount >= e.maxReproductions) {
-                    let dPoints, dColor,  dSize = 15; // Basis: Herbivore
-
-                    dColor = e.color;
-
-                    if (e instanceof SnakeCell) {
-                        dPoints = window.SETTINGS.SCORE_SNAKE_BIRTH;
-                    } else if (e instanceof CarnivoreCell) {
-                        dPoints = window.SETTINGS.SCORE_CARNIVORE_BIRTH;
-                    } else {
-                        dPoints = window.SETTINGS.SCORE_HERBIVORE_BIRTH;
-                    }
-
-                    const diamond = new DiamondCell(e.x, e.y, dSize, dPoints, dColor);
-                    newEntities.push(diamond);
-                    staticGrid.add(diamond);
-
-                    // --- NEU: Umliegende Pflanzen kurz aufwecken,
-                    // damit sie den neuen Diamanten sofort aus sich herausschieben! ---
-                    const diamondNeighbors = staticGrid.getEntitiesInArea(e.x, e.y, dSize * 2 + 50);
-                    diamondNeighbors.forEach(n => {
-                        if (n.type === 'plant') n.settleTimer = 20;
-                    });
-                }*/
-
-
-                // 3. Super-Pflanzen spawnen (aus den Nährstoffen des Kopfes)
-                /*if (!e.isEaten ) { // && Math.random() > 0.7 && e.reproductionCount < e.maxReproductions
-
-                    // NEU: Farbe des Tiers auslesen (z.B. aus "rgb(200, 100, 50)" die Zahlen holen)
-                    const rgbMatch = e.color.match(/\d+/g);
-                    let animalBaseColor = null;
-
-                    if (rgbMatch && rgbMatch.length >= 3) {
-                        animalBaseColor = {
-                            r: parseInt(rgbMatch[0]),
-                            g: parseInt(rgbMatch[1]),
-                            b: parseInt(rgbMatch[2])
-                        };
-                    }
-
-                    const plant = new PlantSegment(e.x, e.y, null, false, animalBaseColor);
-                    plant.isTip = false;
-                    plant.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL * 0.75;
-                    newEntities.push(plant);
-                    staticGrid.add(plant);
-                }*/
-
                 isAlive = false;
                 e.alive = false;
                 if (e.tailSegments) e.tailSegments.forEach(t => t.alive = false);
@@ -1051,6 +955,73 @@ function update() {
 
         if (e.type === 'plant') {
             e.update(isStartup);
+
+            // Verrottete / Verhungerte Blätter endgültig löschen
+            if (e.size <= 2) {
+                e.unlink();
+                e.alive = false;
+                staticGrid.remove(e);
+                continue;
+            }
+
+            // ==========================================
+            // --- NEU: Gummiband-Effekt (Federkraft) ---
+            // ==========================================
+            let springDx = 0;
+            let springDy = 0;
+            const pullFactor = 0.01; // Wie stark das "Gummiband" zieht (0.05 ist sanft und weich)
+
+            // 1. Zum Vorgänger ziehen
+            if (e.prev && e.prev.alive) {
+                const dx = e.prev.x - e.x;
+                const dy = e.prev.y - e.y;
+                const distSq = dx * dx + dy * dy; // Keine Wurzel!
+
+                const targetDist = e.size + e.prev.size - 2;
+                const targetDistSq = targetDist * targetDist; // Ziel quadratisch
+
+                // ERST prüfen wir Quadrate, WENN zu weit weg, DANN Wurzel ziehen
+                if (distSq > targetDistSq) {
+                    const dist = Math.sqrt(distSq);
+                    springDx += (dx / dist) * (dist - targetDist) * pullFactor;
+                    springDy += (dy / dist) * (dist - targetDist) * pullFactor;
+                }
+            }
+
+            // 2. Zu den Nachfolgern ziehen
+            if (e.next && e.next.length > 0) {
+                // --- OPTIMIERUNG: for-Schleife statt forEach ---
+                for (let nIdx = 0; nIdx < e.next.length; nIdx++) {
+                    const child = e.next[nIdx];
+                    if (child.alive) {
+                        const dx = child.x - e.x;
+                        const dy = child.y - e.y;
+                        const distSq = dx * dx + dy * dy;
+                        const targetDist = e.size + child.size - 2;
+                        const targetDistSq = targetDist * targetDist;
+
+                        if (distSq > targetDistSq) {
+                            const dist = Math.sqrt(distSq);
+                            springDx += (dx / dist) * (dist - targetDist) * pullFactor;
+                            springDy += (dy / dist) * (dist - targetDist) * pullFactor;
+                        }
+                    }
+                }
+            }
+
+            // Wenn sich die Pflanze durch die Federkraft bewegen muss:
+            if (Math.abs(springDx) > 0.01 || Math.abs(springDy) > 0.01) {
+                staticGrid.remove(e); // WICHTIG: Aus dem Raster nehmen
+                e.x += springDx;
+                e.y += springDy;
+                staticGrid.add(e);    // WICHTIG: Mit neuer Position ins Raster einfügen
+
+                // Pflanze aufwecken, damit sie sich beim Zusammenziehen
+                // nicht versehentlich in fremde Pflanzen hineinbuggt!
+                e.settleTimer = Math.max(e.settleTimer || 0, 3);
+            }
+            // ==========================================
+
 
             // --- OPTIMIERUNG: Spatial Sleep (Schlafende Pflanzen) ---
             if (e.settleTimer === undefined) e.settleTimer = 30;
@@ -1126,10 +1097,63 @@ function update() {
                     angle = Math.random() * Math.PI * 2;
                 }
 
+                // ==========================================
+                // --- NEU: VOM STEIN WEGWACHSEN ---
+                // ==========================================
+                // Wir schauen ca. 40 Pixel weit, ob ein Stein im Weg liegt
+                const scanRadius = 150;
+                const nearbyForGrowth = staticGrid.getEntitiesInArea(e.x, e.y, scanRadius);
+
+                let repelX = 0;
+                let repelY = 0;
+                let stoneFound = false;
+
+                // Hochperformante Schleife (mit Fast-Fail)
+                for (let nIdx = 0; nIdx < nearbyForGrowth.length; nIdx++) {
+                    const n = nearbyForGrowth[nIdx];
+                    if (n.type === 'stone' && n.alive !== false) {
+                        const dx = e.x - n.x; // Vektor VOM Stein ZUR Pflanze
+                        const dy = e.y - n.y;
+
+                        // Fast Fail!
+                        if (Math.abs(dx) > scanRadius || Math.abs(dy) > scanRadius) continue;
+
+                        const distSq = dx * dx + dy * dy;
+                        // Den Radius des Steins mit einbeziehen, damit Riesen-Steine weiter wegdrücken
+                        const effectiveScanRadius = scanRadius + n.size;
+
+                        if (distSq > 0 && distSq < effectiveScanRadius * effectiveScanRadius) {
+                            const dist = Math.sqrt(distSq);
+                            // Stärke: Je näher der Stein, desto massiver der Druck wegzuwachsen
+                            const force = (effectiveScanRadius - dist) / effectiveScanRadius;
+                            repelX += (dx / dist) * force;
+                            repelY += (dy / dist) * force;
+                            stoneFound = true;
+                        }
+                    }
+                }
+
+                // Wenn ein Stein nah ist, verbiegen wir den Wachstums-Winkel
+                if (stoneFound) {
+                    // Alte Richtung in einen X/Y-Vektor umwandeln
+                    let currentDx = Math.cos(angle);
+                    let currentDy = Math.sin(angle);
+
+                    // Den "Flucht-Vektor" vom Stein addieren
+                    // (Gewichtung 2.0 = Der Stein verdrängt die Pflanze sehr stark)
+                    currentDx += repelX * 2.0;
+                    currentDy += repelY * 2.0;
+
+                    // Den resultierenden Vektor wieder in einen Winkel umwandeln
+                    angle = Math.atan2(currentDy, currentDx);
+                }
+                // ==========================================
+
                 const dist = e.maxSize;
 
                 let spawnX = e.x + Math.cos(angle) * dist;
                 let spawnY = e.y + Math.sin(angle) * dist;
+
 
                 // Abprall-Logik am Spielfeldrand
                 let bounced = false;
@@ -1174,6 +1198,10 @@ function update() {
                     e.isTip = false;
                     const child = new PlantSegment(spawnX, spawnY, e, e.isSuper, e.baseColor);
                     child.generation = currentGen + 1;
+
+                    // --- NEU: Das Kind als Nachfolger registrieren ---
+                    e.next.push(child);
+
                     newEntities.push(child);
                     staticGrid.add(child);
                     globalPlantCount++; // Sofort mitzählen!
@@ -1285,7 +1313,7 @@ function update() {
         }
 
         if (isAlive && e.alive !== false) survivingEntities.push(e);
-    });
+    }
 
     // --- PERFORMANCE FIX: Kein Array-Spamming mehr ---
     // Wir leeren das entities-Array nicht, sondern überschreiben es in-place
@@ -1450,6 +1478,7 @@ function saveSimulationState() {
             data.isTip = e.isTip;
             data.generation = e.generation || 0;
             data.parentId = e.parent ? e.parent._saveId : null;
+            data.isDisconnected = e.isDisconnected || false;
         } else if (e.type === 'tail') {
             data.branch = e.branch;
             data.depth = e.depth;
@@ -1525,6 +1554,8 @@ function loadSimulationState() {
             e = new PlantSegment(loadX, loadY, null, data.isSuper, data.baseColor);
             e.size = data.size; e.age = data.age; e.isTip = data.isTip; e.color = data.color;
             e.generation = data.generation || 0;
+            e.isDisconnected = data.isDisconnected || false;
+            e.next = [];
         } else if (data.className === 'TailSegment') {
             e = new TailSegment(loadX, loadY, null, data.size, data.branch, data.depth);
             e.spineX = loadSpineX; e.spineY = loadSpineY; e.color = data.color; e.dotColor = data.dotColor;
@@ -1559,12 +1590,28 @@ function loadSimulationState() {
         }
     });
 
+    // --- AKTUALISIERT: Wiederherstellung aller Objekt-Verknüpfungen ---
     entities.forEach(e => {
-        if (e.type === 'plant' || e.type === 'tail') {
+        if (e.type === 'plant') {
+            if (e._loadParentId !== undefined && e._loadParentId !== null) {
+                const parentNode = idMap.get(e._loadParentId);
+                if (parentNode) {
+                    e.parent = parentNode;
+                    e.prev = parentNode; // 1. Vorgänger setzen
+
+                    // 2. Dieses Kind im Nachfolger-Array des Vorgängers registrieren
+                    if (!parentNode.next.includes(e)) {
+                        parentNode.next.push(e);
+                    }
+                }
+            }
+        }
+        else if (e.type === 'tail') {
             if (e._loadParentId !== undefined && e._loadParentId !== null) {
                 e.parent = idMap.get(e._loadParentId) || null;
             }
         }
+
         if (e.type === 'animal' && e._tailIds) {
             e.tailSegments = e._tailIds.map(id => idMap.get(id)).filter(Boolean);
             delete e._tailIds;

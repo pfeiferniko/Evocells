@@ -126,20 +126,40 @@ function init3D() {
     // floor.receiveShadow = true;
     // scene.add(floor);
 
-    // In init3D()
-    initFloorCanvas(); // Canvas vorbereiten
+    // ... dein anderer Code in init3D (Kamera, Lichter etc.) ...
 
-    const floorGeometry = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_HEIGHT);
+    initGlowSystem(); // Unser Lichtsystem starten (schwebt auf y = -14.5)
+
+    // ==========================================
+    // 1. DER BASIS-BODEN (Ganz unten)
+    // ==========================================
+    const floorGeometry = new THREE.PlaneGeometry(window.WORLD_WIDTH, window.WORLD_HEIGHT);
     const floorMaterial = new THREE.MeshPhongMaterial({
-        map: floorTexture,
-        shininess: 0 // Optional: Verhindert zu starke Lichtreflexionen auf den Flecken
+        color: 0x050508,
+        shininess: 0
     });
-
     const floor = new THREE.Mesh(floorGeometry, floorMaterial);
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(WORLD_WIDTH / 2, -15, WORLD_HEIGHT / 2);
-    floor.receiveShadow = true;
+    floor.position.set(window.WORLD_WIDTH / 2, -15.0, window.WORLD_HEIGHT / 2);
+    // WICHTIG: Der Boden selbst fängt keine Schatten mehr auf!
+    floor.receiveShadow = false;
     scene.add(floor);
+
+
+    // ==========================================
+    // 2. DIE SCHATTEN-EBENE (Über dem Licht!)
+    // ==========================================
+    // ShadowMaterial ist komplett unsichtbar, malt aber alle Schatten
+    // als halbtransparente schwarze Pixel auf alles, was darunter liegt.
+    const shadowMaterial = new THREE.ShadowMaterial({
+        opacity: 1 // Wie dunkel/stark soll der Schatten sein? (0.0 bis 1.0)
+    });
+    const shadowPlane = new THREE.Mesh(floorGeometry, shadowMaterial);
+    shadowPlane.rotation.x = -Math.PI / 2;
+    // WICHTIG: y = -14.0 liegt physikalisch über den Glows (die sind bei -14.5)
+    shadowPlane.position.set(window.WORLD_WIDTH / 2, -14.0, window.WORLD_HEIGHT / 2);
+    shadowPlane.receiveShadow = true; // HIER fangen wir den Schatten ein
+    scene.add(shadowPlane);
 
     // --- NEU: AQUARIUM-KANTEN ---
     // Wie hoch das Aquarium-Glas sein soll
@@ -155,7 +175,7 @@ function init3D() {
     const edgesMat = new THREE.LineBasicMaterial({
         color: 0x1a4496, // Das gleiche Cyan/Blaugrün wie dein Plankton
         transparent: true,
-        opacity: 0.7     // Halbtransparent für einen echten Glas-Look
+        opacity: 0.8     // Halbtransparent für einen echten Glas-Look
     });
 
     const aquarium = new THREE.LineSegments(edgesGeo, edgesMat);
@@ -193,90 +213,112 @@ function createStain(colorStr) {
     return canvas;
 }
 
-function initFloorCanvas() {
-    floorCanvas = document.createElement('canvas');
-    // Die Auflösung entspricht jetzt 1:1 der 3D-Welt!
-    floorCanvas.width = window.WORLD_WIDTH;
-    floorCanvas.height = window.WORLD_HEIGHT;
+let glowInstancedMesh;
+const MAX_GLOWS = 2500; // Genug Platz für 1500 lebende + sterbende Pflanzen
 
-    floorCtx = floorCanvas.getContext('2d');
-    floorTexture = new THREE.CanvasTexture(floorCanvas);
-    floorTexture.magFilter = THREE.LinearFilter;
-    floorTexture.minFilter = THREE.LinearFilter;
 
-    normalStain = createStain('rgba(46, 204, 113, 0.6)');
-    superStain = createStain('rgba(142, 68, 173, 0.6)');
+function initGlowSystem() {
+    // 1. Eine einzige winzige Leucht-Textur generieren
+    const canvas = document.createElement('canvas');
+    canvas.width = 64; canvas.height = 64;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+
+    // --- DER FIX FÜR SANFTES LICHT + SCHATTEN ---
+    // Wir machen den Verlauf extrem schwach (max 20% Deckkraft).
+    // Durch das AdditiveBlending wirkt es trotzdem wie ein toller Glow!
+    grad.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+    grad.addColorStop(0.4, 'rgba(255, 255, 255, 0.05)'); // Macht den Rand sehr weich
+    grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 64, 64);
+
+    const sharedGlowTexture = new THREE.CanvasTexture(canvas);
+
+    // 2. Das Material (Wieder AdditiveBlending, ABER ohne Opacity-Limit!)
+    const glowMat = new THREE.MeshBasicMaterial({
+        map: sharedGlowTexture,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending
+
+    });
+
+    // 3. Die Geometrie (Flache Scheiben)
+    const glowGeo = new THREE.PlaneGeometry(1, 1);
+    glowGeo.rotateX(-Math.PI / 2); // Flach auf den Boden legen
+
+    glowInstancedMesh = new THREE.InstancedMesh(glowGeo, glowMat, MAX_GLOWS);
+    glowInstancedMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+
+    // Die Lichter minimal über den Boden heben (Boden ist bei -15)
+    glowInstancedMesh.position.y = -14.5;
+    scene.add(glowInstancedMesh);
 }
 
 function updateFloorStains() {
-    if (!floorCtx) return;
+    if (!glowInstancedMesh) return;
 
-    // 1. Alle bekannten Lichter als "diesen Frame noch nicht gesehen" markieren
     plantGlows.forEach(glow => glow.seenThisFrame = false);
 
-    // 2. Aktive Pflanzen durchgehen und Lichter updaten/hinzufügen
+    // 1. Gedächtnis aktualisieren
     entities.forEach(e => {
         if (e.type === 'plant' && e.alive) {
             let glow = plantGlows.get(e);
             if (!glow) {
-                // NEU: Pflanze ist frisch gewachsen -> Licht startet unsichtbar (Alpha 0)
+                // Neues Licht beginnt unsichtbar (Alpha 0)
                 glow = { alpha: 0, isSuper: e.isSuper, x: e.x, y: e.y, pulseOffset: e.pulseOffset };
                 plantGlows.set(e, glow);
             }
-
             glow.seenThisFrame = true;
-
-            // Position aktuell halten, falls die Pflanze von Tieren geschoben wird
             glow.x = e.x;
             glow.y = e.y;
 
-            // Langsam einblenden (0.02 pro Frame = ca. 1 Sekunde für 100%)
+            // Einblenden
             if (glow.alpha < 1.0) {
-                glow.alpha = Math.min(1.0, glow.alpha + 0.02);
+                glow.alpha = Math.min(1.0, glow.alpha + 0.03);
             }
         }
     });
 
-    // 3. Boden schwarz leeren
-    floorCtx.fillStyle = '#050508';
-    floorCtx.fillRect(0, 0, floorCanvas.width, floorCanvas.height);
-
-    const scaleX = floorCanvas.width / window.WORLD_WIDTH;
-    const scaleY = floorCanvas.height / window.WORLD_HEIGHT;
+    let count = 0;
     const time = Date.now();
 
-    // 4. Alle Lichter zeichnen (und tote ausblenden)
-    for (let [plant, glow] of plantGlows.entries()) {
-
+    // 2. An die Grafikkarte senden (Ohne neue Iterator-Objekte zu erzeugen!)
+    plantGlows.forEach((glow, plant) => {
         if (!glow.seenThisFrame) {
-            // Die Pflanze existiert im Spiel nicht mehr (gefressen/gelöscht)
-            // -> Licht sanft ausblenden (0.03 ist ein Hauch schneller als das Einblenden)
-            glow.alpha -= 0.03;
+            glow.alpha -= 0.02; // Sanftes Ausblenden für tote Pflanzen
         }
 
-        // Wenn das Licht komplett erloschen ist, aus unserem Gedächtnis löschen
         if (glow.alpha <= 0) {
             plantGlows.delete(plant);
-            continue; // Diesen Frame nicht mehr zeichnen
+            return; // WICHTIG: In einem forEach nutzt man 'return' statt 'continue'
         }
 
-        // Sway berechnen (selbst wenn die Pflanze tot ist, schwingt das Licht sanft aus!)
-        const swayZ = Math.sin(time * 0.0005 + glow.pulseOffset) * 10;
-        const cx = glow.x * scaleX;
-        const cy = (glow.y + swayZ) * scaleY;
+        if (count < MAX_GLOWS) {
+            const swayZ = Math.sin(time * 0.0005 + glow.pulseOffset) * 10;
 
-        const stain = glow.isSuper ? superStain : normalStain;
+            _dummy.position.set(glow.x, 0, glow.y + swayZ);
 
-        // Den Transparenz-Wert (Alpha) des Canvas setzen
-        floorCtx.globalAlpha = glow.alpha;
-        floorCtx.drawImage(stain, cx - HALF_STAIN, cy - HALF_STAIN);
-    }
+            const maxRadius = glow.isSuper ? 180 : 100;
+            const currentRadius = maxRadius * glow.alpha;
 
-    // WICHTIG: Transparenz für den nächsten Frame wieder auf 100% zurücksetzen!
-    floorCtx.globalAlpha = 1.0;
+            _dummy.scale.set(currentRadius, 1, currentRadius);
+            _dummy.updateMatrix();
+            glowInstancedMesh.setMatrixAt(count, _dummy.matrix);
 
-    // Grafikkarte das neue Bild übergeben
-    floorTexture.needsUpdate = true;
+            _tempColor.set(glow.isSuper ? '#8e44ad' : '#2ecc71');
+            glowInstancedMesh.setColorAt(count, _tempColor);
+
+            count++;
+        }
+    });
+
+    // 3. Nur die Matrix-Daten rüberschieben
+    glowInstancedMesh.count = count;
+    glowInstancedMesh.instanceMatrix.needsUpdate = true;
+    if (glowInstancedMesh.instanceColor) glowInstancedMesh.instanceColor.needsUpdate = true;
 }
 
 function updateTrackingCamera() {
@@ -393,9 +435,9 @@ function updateDayNight3D() {
     ambientLight.color.setRGB(ambR/255, ambG/255, ambB/255);
 
     // 4. HINTERGRUND: Pulsiert nur hauchzart mit
-    const bgR = 0x08 + (0x04 * timePhase);
-    const bgG = 0x10 + (0x06 * timePhase);
-    const bgB = 0x18 + (0x0a * timePhase);
+    const bgR = 0x03 + (0x04 * timePhase);
+    const bgG = 0x03 + (0x06 * timePhase);
+    const bgB = 0x05 + (0x0a * timePhase);
     scene.background.setRGB(bgR/255, bgG/255, bgB/255);
 }
 
@@ -495,7 +537,7 @@ function draw3D() {
 
     updateTrackingCamera();
 
-    if (frameCount % 10 === 0) {
+    if (frameCount % 3 === 0) {
         updateFloorStains();
     }
 
@@ -565,28 +607,23 @@ function syncEntities() {
 
         if (e.type === 'plant') {
             if (plantCount < MAX_PLANTS) {
-                const time = Date.now();
+                // NEU: Pflanze bewegt sich nur jeden 2. Frame!
+                if (frameCount % 2 === 0) {
+                    const time = Date.now();
+                    const pulse = 1.0 + Math.sin((time * e.pulseSpeed) + e.pulseOffset) * 0.1;
+                    const s = (e.size / 10) * pulse;
+                    // const swayZ = Math.sin(time * 0.0005 + e.pulseOffset) * 10;
 
-                // 1. Das bestehende Pulsieren (Größe)
-                const pulse = 1.0 + Math.sin((time * e.pulseSpeed) + e.pulseOffset) * 0.1;
-                const s = (e.size / 10) * pulse;
+                    // _dummy.position.set(e.x, 0, e.y + swayZ);
+                    _dummy.position.set(e.x, 0, e.y);
+                    _dummy.rotation.set(0, 0, 0);
+                    _dummy.scale.set(s, s, s);
+                    _dummy.updateMatrix();
+                    plantsInstancedMesh.setMatrixAt(plantCount, _dummy.matrix);
 
-                // 2. NEU: Ausschließlich vor und zurück (Z-Achse)
-                // 0.0005 macht die Welle schön langsam und ruhig, * 10 ist der Radius
-                const swayZ = Math.sin(time * 0.0005 + e.pulseOffset) * 5;
-
-                // 3. Offset nur auf e.y (Z-Achse in 3D) addieren, X bleibt starr
-                _dummy.position.set(e.x, 0, e.y + swayZ);
-
-                _dummy.rotation.set(0, 0, 0); // Keine Neigung mehr
-
-                _dummy.scale.set(s, s, s);
-                _dummy.updateMatrix();
-                plantsInstancedMesh.setMatrixAt(plantCount, _dummy.matrix);
-
-                _tempColor.set(e.color || '#ffffff');
-                plantsInstancedMesh.setColorAt(plantCount, _tempColor);
-
+                    _tempColor.set(e.color || '#ffffff');
+                    plantsInstancedMesh.setColorAt(plantCount, _tempColor);
+                }
                 plantCount++;
             }
         } else if (e.type === 'stone') {

@@ -43,21 +43,23 @@ class PlantSegment extends BaseCell {
         super(x, y, null);
         this.type = 'plant';
 
-        // NEU: Ist es eine Super-Pflanze?
+        // --- Verknüpfungen für die Ranke ---
+        this.parent = parent;
+        this.prev = parent;
+        this.next = [];
+
         this.isSuper = isSuper;
         this.baseColor = baseColor;
-        // --- NEU: Variable Maximalgröße ---
+        // Flag für abgetrennte Äste
+        this.isDisconnected = false;
+
         if (this.isSuper) {
-            // Super-Pflanzen: Zufallswert um die Basisgröße herum
             this.maxSize = window.SETTINGS.PLANT_MAX_SIZE_SUPER_BASE + Math.random() * 3;
         } else {
-            // Normale Pflanzen: Fixe Größe
             this.maxSize = window.SETTINGS.PLANT_MAX_SIZE_NORMAL;
         }
 
-        // --- NEUE FARB-LOGIK ---
         if (this.baseColor) {
-            // Wenn eine Farbe übergeben wurde, variieren wir die RGB-Werte leicht (+/- 20)
             const r = Math.max(0, Math.min(255, this.baseColor.r + Math.floor((Math.random() - 0.5) * 80)));
             const g = Math.max(0, Math.min(255, this.baseColor.g + Math.floor((Math.random() - 0.5) * 80)));
             const b = Math.max(0, Math.min(255, this.baseColor.b + Math.floor((Math.random() - 0.5) * 80)));
@@ -71,7 +73,6 @@ class PlantSegment extends BaseCell {
             this.color = `hsl(${hue}, 90%, ${lightness}%)`;
         }
 
-        this.parent = parent;
         this.age = 0;
         this.shouldGrow = false;
         this.isTip = true;
@@ -80,10 +81,52 @@ class PlantSegment extends BaseCell {
         this.pulseSpeed = 0.001 + Math.random() * 0.002;
     }
 
-    // Nimmt jetzt den isStartup-Wert aus der main.js entgegen
+    // --- NEU: Clevere Trennungs-Logik ---
+    unlink() {
+        // 1. Dem Vorgänger (Stumpf) mitteilen, dass wir weg sind
+        if (this.prev) {
+            const idx = this.prev.next.indexOf(this);
+            if (idx > -1) {
+                this.prev.next.splice(idx, 1);
+
+                // WICHTIG: Wenn der Vorgänger jetzt keine Kinder mehr hat,
+                // wird er zur neuen Spitze und kann wieder wachsen!
+                if (this.prev.next.length === 0) {
+                    this.prev.isTip = true;
+                }
+            }
+        }
+
+        // 2. Den Nachfolgern (dem abgetrennten Ast) sagen, dass die Verbindung zur Wurzel fehlt
+        this.next.forEach(child => {
+            child.prev = null;
+            child.parent = null;
+            // Rekursiv alle Blätter dieses abgetrennten Astes zum Verrotten markieren
+            child.setDisconnectedRecursive();
+        });
+
+        this.next = [];
+        this.prev = null;
+        this.parent = null;
+    }
+
+    // Hilfsfunktion: Wandert die ganze abgetrennte Ranke ab
+    setDisconnectedRecursive() {
+        this.isDisconnected = true;
+        this.next.forEach(child => child.setDisconnectedRecursive());
+    }
+
     update(isStartup = false) {
         this.age++;
 
+        // --- NEU: Abgetrennte Äste verrotten ganz langsam ---
+        if (this.isDisconnected) {
+            // 0.005 ist extrem langsam (dauert ewig, bis es ganz verschwindet)
+            this.size -= 0.005;
+            return; // Abgetrennte Äste wachsen nicht mehr weiter
+        }
+
+        // Normales Wachstum für lebende Pflanzen
         let growthRate = isStartup ? window.SETTINGS.PLANT_GROWTH_RATE_STARTUP : window.SETTINGS.PLANT_GROWTH_RATE_NORMAL;
 
         if (this.isSuper) {

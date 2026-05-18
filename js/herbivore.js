@@ -32,6 +32,11 @@ class HerbivoreCell extends AnimalCell {
 
         this.tailLengthMultiplier = 0.8;
         this.tailLengthOffset = -2;
+        this.moveObstacles = [];
+        this.activeThreats = [];
+        this.predators = [];
+        this.visiblePlants = [];
+        this.localObstacles = [];
     }
 
     update(staticGrid, dynamicGrid) {
@@ -44,74 +49,80 @@ class HerbivoreCell extends AnimalCell {
             panicRadius += window.SETTINGS.FLEE_HYSTERESIS_BONUS;
         }
 
-        // --- 2. SINGLE SOURCE OF TRUTH ---
-        const maxRadius = Math.max(panicRadius, this.genome.sightRange, 60);
-        const maxRadiusSq = maxRadius * maxRadius;
         const panicRadiusSq = panicRadius * panicRadius;
         const sightRangeSq = this.genome.sightRange * this.genome.sightRange;
 
-        const allDynamic = dynamicGrid.getEntitiesInArea(this.x, this.y, maxRadius);
-        const allStatic = staticGrid.getEntitiesInArea(this.x, this.y, maxRadius);
-
-        const predators = [];
-        const visiblePlants = [];
-        const localObstacles = [];
-        const moveObstacles = [];
-
-        // Statische Objekte (Hindernisse & Futter) sortieren
-        for (let i = 0; i < allStatic.length; i++) {
-            const e = allStatic[i];
-            if (e.alive !== false) {
+        // =========================================================
+        // --- 2. MOVEMENT HINDERNISSE (Jeden Frame, winziger Radius) ---
+        // =========================================================
+        this.moveObstacles.length = 0;
+        const smallStatic = staticGrid.getEntitiesInArea(this.x, this.y, 60);
+        for (let i = 0; i < smallStatic.length; i++) {
+            const e = smallStatic[i];
+            if (e.alive !== false && (e.type === 'plant' || e.type === 'stone')) {
                 const dx = e.x - this.x;
                 const dy = e.y - this.y;
-                const distSq = dx * dx + dy * dy;
+                if (dx * dx + dy * dy <= 3600) this.moveObstacles.push(e); // 60 * 60
+            }
+        }
 
-                if (distSq <= maxRadiusSq) {
-                    if (distSq <= 3600) moveObstacles.push(e); // 60 * 60
+        // =========================================================
+        // --- 3. FEIND-SCAN (KI-Schlaf: Nur alle 5 Frames!) ---
+        // =========================================================
+        if (this.threatScanTimer === undefined) {
+            this.threatScanTimer = Math.floor(Math.random() * 5); // Desynchronisation gegen Ruckler!
+            this.activeThreats.length = 0;
+        }
+        this.threatScanTimer++;
 
-                    if (e.type === 'plant' || e.type === 'stone') {
-                        if (distSq <= panicRadiusSq) localObstacles.push(e);
-                    }
-                    if (e.type === 'plant' && distSq <= sightRangeSq) {
-                        visiblePlants.push(e);
+        if (this.threatScanTimer > 5) {
+            const previousThreats = this.activeThreats || [];
+            this.activeThreats.length = 0;
+
+            // Nur das dynamische Grid nach Feinden absuchen
+            const dynamicInArea = dynamicGrid.getEntitiesInArea(this.x, this.y, panicRadius);
+            this.predators.length = 0;
+
+            for (let i = 0; i < dynamicInArea.length; i++) {
+                const e = dynamicInArea[i];
+                if (e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions && e.size >= this.size) {
+                    const dx = e.x - this.x;
+                    const dy = e.y - this.y;
+                    if (dx * dx + dy * dy <= panicRadiusSq) {
+                        this.predators.push(e);
                     }
                 }
             }
-        }
 
-        // Dynamische Objekte (Räuber) sortieren
-        for (let i = 0; i < allDynamic.length; i++) {
-            const e = allDynamic[i];
-            if (e instanceof CarnivoreCell && e.alive && !e.isResting && e.reproductionCount < e.maxReproductions && e.size >= this.size) {
-                const dx = e.x - this.x;
-                const dy = e.y - this.y;
-                const distSq = dx * dx + dy * dy;
+            // --- OPTIMIERUNG: Sichtlinie & Steine nur laden, wenn Feinde existieren! ---
+            if (this.predators.length > 0) {
+                this.localObstacles.length = 0;
+                const staticInArea = staticGrid.getEntitiesInArea(this.x, this.y, panicRadius);
 
-                if (distSq <= panicRadiusSq) {
-                    predators.push(e);
+                for (let i = 0; i < staticInArea.length; i++) {
+                    const e = staticInArea[i];
+                    if (e.alive !== false && (e.type === 'plant' || e.type === 'stone')) {
+                        // Minimalistischer Distanz-Check für Hindernisse
+                        const dx = e.x - this.x;
+                        const dy = e.y - this.y;
+                        if (dx * dx + dy * dy <= panicRadiusSq) this.localObstacles.push(e);
+                    }
+                }
+
+                for (let i = 0; i < this.predators.length; i++) {
+                    const p = this.predators[i];
+                    if (this.hasLineOfSight(p, this.localObstacles) || previousThreats.includes(p)) {
+                        this.activeThreats.push(p);
+                    }
                 }
             }
+            this.threatScanTimer = 0;
         }
 
-        // --- 3. FLUCHT & LOGIK ---
-        const previousThreats = this.activeThreats || [];
-        this.threat = null;
-        let activeThreats = [];
-
-        for (let i = 0; i < predators.length; i++) {
-            const p = predators[i];
-            // Wir sparen uns hier Math.sqrt, da wir in der Sortierung schon geprüft haben, dass sie im Radius sind!
-            if (this.hasLineOfSight(p, localObstacles) || previousThreats.includes(p)) {
-                activeThreats.push(p);
-            }
-        }
-
-        // Das gesamte Rudel für den nächsten Frame im Tier speichern!
-        this.activeThreats = activeThreats;
-
-        if (activeThreats.length > 0) {
-            this.threat = activeThreats[0]; // Behalten wir für die rote Debug-Linie
-            this.flee(activeThreats, staticGrid);
+        // --- FLUCHT AUSFÜHREN ---
+        if (this.activeThreats.length > 0) {
+            this.threat = this.activeThreats[0];
+            this.flee(this.activeThreats, staticGrid);
             return status;
         } else {
             this.threat = null;
@@ -120,26 +131,58 @@ class HerbivoreCell extends AnimalCell {
 
         this.checkTargetTimeout();
 
+        // =========================================================
+        // --- 4. FUTTERSUCHE (Lazy Fetching: Nur alle 15 Frames!) ---
+        // =========================================================
         if (this.reproductionCount >= this.maxReproductions) {
-            this.target = null; // Das alte Tier sucht nichts mehr
+            this.target = null;
         } else if ((this.ignoreTargetTimer || 0) <= 0) {
-            // Wir aktualisieren das Ziel regelmäßig (alle 15 Frames) oder wenn wir keins haben
-            if (!this.target || !this.target.alive || this.age % 15 === 0) {
-                const newTarget = this.findClosestInSight(visiblePlants, this.target);
 
-                if (newTarget) {
-                    this.target = newTarget;
-                    this.targetTimer = 0;
-                } else if (!this.target || !this.target.alive) {
+            if (this.foodSearchTimer === undefined) {
+                this.foodSearchTimer = Math.floor(Math.random() * 15);
+            }
+            this.foodSearchTimer++;
+
+            // Suche nur, wenn kein Ziel vorhanden, Ziel tot oder 15 Frames vergangen sind
+            if (!this.target || !this.target.alive || this.foodSearchTimer > 15) {
+
+                this.visiblePlants.length = 0;
+                // Das Grid NUR DANN abfragen, wenn wir wirklich Hunger haben!
+                const staticInArea = staticGrid.getEntitiesInArea(this.x, this.y, this.genome.sightRange);
+
+                for (let i = 0; i < staticInArea.length; i++) {
+                    const e = staticInArea[i];
+                    if (e.alive !== false && e.type === 'plant') {
+                        const dx = e.x - this.x;
+                        const dy = e.y - this.y;
+                        if (dx * dx + dy * dy <= sightRangeSq) {
+                            this.visiblePlants.push(e);
+                        }
+                    }
+                }
+
+                if (this.visiblePlants.length > 0) {
+                    const newTarget = this.findClosestInSight(this.visiblePlants, this.target);
+                    if (newTarget) {
+                        this.target = newTarget;
+                        this.targetTimer = 0;
+                    } else if (!this.target || !this.target.alive) {
+                        this.target = null;
+                    }
+                } else {
                     this.target = null;
                 }
+
+                this.foodSearchTimer = 0;
             }
         } else {
             this.target = null;
         }
 
-        // Ziel und Hindernisse übergeben
-        this.move(this.target, false, moveObstacles);
+        // =========================================================
+        // --- 5. FINALE BEWEGUNG ---
+        // =========================================================
+        this.move(this.target, false, this.moveObstacles);
         return status;
     }
 }

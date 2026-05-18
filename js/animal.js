@@ -215,9 +215,9 @@ class AnimalCell extends BaseCell {
         //     }
         // }
 
-        if (!isHerbivore) {
-            this.handleWaypoints(staticGrid);
-        }
+        // if (!isHerbivore) {
+        //     this.handleWaypoints(staticGrid);
+        // }
 
         return 'moving';
     }
@@ -436,9 +436,13 @@ class AnimalCell extends BaseCell {
 
         let crowded = false;
         if (!nearEdge) {
-            // Nur Algen und Steine im ganz nahen Umfeld zählen
-            const obstacles = grid.getEntitiesInArea(this.x, this.y, 80).filter(e => e.type === 'plant' || e.type === 'stone');
-            if (obstacles.length > 15) {
+
+            const areaEntities = grid.getEntitiesInArea(this.x, this.y, 60);
+            let obstacleCount = 0;
+            for(let i=0; i < areaEntities.length; i++) {
+                if(areaEntities[i].type === 'plant' || areaEntities[i].type === 'stone') obstacleCount++;
+            }
+            if (obstacleCount > 15) {
                 crowded = true;
             }
         }
@@ -483,14 +487,17 @@ class AnimalCell extends BaseCell {
         let closestTarget = null;
         let minDistance = Infinity;
         const maxRadius = this.genome.sightRange;
+        const maxRadiusSq = maxRadius * maxRadius;
 
         for (const entity of candidates) {
             const dx = entity.x - this.x;
             const dy = entity.y - this.y;
-            const distance = Math.sqrt(dx * dx + dy * dy);
+            const distSq = dx * dx + dy * dy;
 
             // 1. Check: Ist das Ziel innerhalb der maximalen Sichtweite?
-            if (distance > maxRadius) continue;
+            if (distSq > maxRadiusSq) continue;
+
+            const distance = Math.sqrt(distSq);
 
             // 2. Check: Ist das Ziel im Sichtkegel?
             const angleToEntity = Math.atan2(dy, dx);
@@ -527,6 +534,7 @@ class AnimalCell extends BaseCell {
         let bestTarget = null;
         let bestScore = Infinity; // Der niedrigste Score gewinnt
         const maxRadius = this.genome.sightRange;
+        const maxRadiusSq = maxRadius * maxRadius;
 
         const isAdultCarnivore = (this instanceof CarnivoreCell) && this.isAdult();
         let nearbyHunters = [];
@@ -552,10 +560,11 @@ class AnimalCell extends BaseCell {
             const dx = entity.x - this.x;
             const dy = entity.y - this.y;
             const lenSq = dx * dx + dy * dy; // Distanz zum Quadrat für schnellere Mathe
-            const distance = Math.sqrt(lenSq);
 
-            // 1. Check: Ist das Ziel innerhalb der maximalen Sichtweite?
-            if (distance > maxRadius) continue;
+            // 1. Check ohne Wurzel!
+            if (lenSq > maxRadiusSq) continue;
+
+            const distance = Math.sqrt(lenSq);
 
             // 2. Check: Ist das Ziel im Sichtkegel?
             const angleToEntity = Math.atan2(dy, dx);
@@ -783,95 +792,121 @@ class AnimalCell extends BaseCell {
         this.target = null;
         this.targetTimer = 0;
 
-        // 1. DAS RADAR (Context Steering)
-        const numSamples = 16;
-        const lookAhead = 50; // Etwas weiter vorausschauen für bessere Wegfindung
-
-        let bestScore = -Infinity;
-        let bestDx = 0;
-        let bestDy = 0;
-
-        // In welche Richtung fliehen wir GERADE AKTUELL? (Für leichte Trägheit)
-        let currentAngle = this.angle;
-        if (this.fleeDirX !== undefined && (this.fleeDirX !== 0 || this.fleeDirY !== 0)) {
-            currentAngle = Math.atan2(this.fleeDirY, this.fleeDirX);
+        // --- OPTIMIERUNG 1: Desynchronisierter KI-Schlaf ---
+        if (this.fleeTimer === undefined) {
+            this.fleeTimer = Math.floor(Math.random() * 5); // Verhindert Lag-Spikes!
         }
+        this.fleeTimer++;
 
-        for (let i = 0; i < numSamples; i++) {
-            const angle = (Math.PI * 2 / numSamples) * i;
-            const dx = Math.cos(angle);
-            const dy = Math.sin(angle);
+        if (this.fleeTimer % 5 === 0 || this._cachedIdealDx === undefined) {
 
-            // Wo liegt der Punkt in der Welt?
-            const px = this.x + dx * lookAhead;
-            const py = this.y + dy * lookAhead;
-
-            // --- WAND-CHECK ---
-            const buffer = 20;
-            if (px < buffer || px > window.WORLD_WIDTH - buffer ||
-                py < buffer || py > window.WORLD_HEIGHT - buffer) {
-                continue; // Punkt an der Wand wird ignoriert
-            }
-
-            // --- SCORE 1: Distanz zum NÄCHSTEN Feind (Nicht zum Schwerpunkt!) ---
-            let minThreatDistSq = Infinity;
-            for (const threat of threats) {
-                const distSq = (px - threat.x)**2 + (py - threat.y)**2;
-                if (distSq < minThreatDistSq) {
-                    minThreatDistSq = distSq;
+            // --- OPTIMIERUNG 2: Precomputed Rays (Nur 1x pro Spielstart berechnet) ---
+            if (!window._FLEE_RAYS) {
+                window._FLEE_RAYS = [];
+                for (let i = 0; i < 16; i++) {
+                    const a = (Math.PI * 2 / 16) * i;
+                    window._FLEE_RAYS.push({ dx: Math.cos(a), dy: Math.sin(a) });
                 }
             }
 
-            // Je weiter weg der nächste Feind an diesem Punkt ist, desto besser
-            const distScore = Math.sqrt(minThreatDistSq);
+            const lookAhead = 50;
+            let bestScore = -Infinity;
+            let bestDx = 0;
+            let bestDy = 0;
 
-            // --- SCORE 2: DIE STRAFE FÜR RICHTUNGSÄNDERUNGEN ---
-            let angleDiff = Math.abs(angle - currentAngle);
-            if (angleDiff > Math.PI) angleDiff = (2 * Math.PI) - angleDiff;
-
-            // DRATISCH REDUZIERT: Von 100 auf 15!
-            // Das Tier bevorzugt jetzt Sicherheit vor geradem Schwimmen.
-            const turnPenalty = angleDiff * 40;
-
-            // --- GESAMT-SCORE ---
-            const finalScore = distScore - turnPenalty;
-
-            if (finalScore > bestScore) {
-                bestScore = finalScore;
-                bestDx = dx;
-                bestDy = dy;
+            // Vorbereitung für den Dot-Product-Hack (Aktuelle Richtung als Vektor)
+            let currentDirX = Math.cos(this.angle);
+            let currentDirY = Math.sin(this.angle);
+            if (this.fleeDirX !== undefined && (this.fleeDirX !== 0 || this.fleeDirY !== 0)) {
+                currentDirX = this.fleeDirX;
+                currentDirY = this.fleeDirY;
             }
+
+            // Das Radar nutzt jetzt die vorberechneten Vektoren!
+            for (let i = 0; i < 16; i++) {
+                const ray = window._FLEE_RAYS[i];
+                const dx = ray.dx;
+                const dy = ray.dy;
+
+                const px = this.x + dx * lookAhead;
+                const py = this.y + dy * lookAhead;
+
+                const buffer = 20;
+                if (px < buffer || px > window.WORLD_WIDTH - buffer ||
+                    py < buffer || py > window.WORLD_HEIGHT - buffer) {
+                    continue;
+                }
+
+                let minThreatDistSq = Infinity;
+                for (let j = 0; j < threats.length; j++) {
+                    const threat = threats[j];
+                    const tdx = px - threat.x;
+                    const tdy = py - threat.y;
+                    const distSq = tdx * tdx + tdy * tdy;
+
+                    if (distSq < minThreatDistSq) {
+                        minThreatDistSq = distSq;
+                    }
+                }
+
+                const distScore = Math.sqrt(minThreatDistSq);
+
+                // --- OPTIMIERUNG 3: Skalarprodukt statt Math.atan2 ---
+                // Ergibt 1 (selbe Richtung) bis -1 (Gegenrichtung)
+                const dotProduct = dx * currentDirX + dy * currentDirY;
+
+                // (1 - dotProduct) ergibt 0 (keine Strafe) bis 2 (maximale Kehrtwende)
+                // Multipliziert mit 60 entspricht exakt Ihrer alten Logik von (angleDiff * 40)!
+                const turnPenalty = (1 - dotProduct) * 60;
+
+                const finalScore = distScore - turnPenalty;
+
+                if (finalScore > bestScore) {
+                    bestScore = finalScore;
+                    bestDx = dx;
+                    bestDy = dy;
+                }
+            }
+
+            // Notfall: Eingekesselt an der Wand
+            if (bestScore === -Infinity) {
+                bestDx = (window.WORLD_WIDTH / 2) - this.x;
+                bestDy = (window.WORLD_HEIGHT / 2) - this.y;
+                // Da dies kein vorberechneter Ray ist, müssen wir ihn normalisieren
+                const mag = Math.sqrt(bestDx * bestDx + bestDy * bestDy);
+                if(mag > 0) { bestDx /= mag; bestDy /= mag; }
+            }
+
+            this._cachedIdealDx = bestDx;
+            this._cachedIdealDy = bestDy;
         }
 
-        // Notfall: Eingekesselt an der Wand
-        if (bestScore === -Infinity) {
-            bestDx = (window.WORLD_WIDTH / 2) - this.x;
-            bestDy = (window.WORLD_HEIGHT / 2) - this.y;
-        }
+        // ==========================================
+        // JEDEN FRAME WEITER (mit den gespeicherten Werten)
+        // ==========================================
 
-        // 2. FLUCHTRICHTUNG SETZEN UND TRÄGHEIT ANWENDEN
-        let mag = Math.sqrt(bestDx * bestDx + bestDy * bestDy);
-        if (mag > 0) {
-            bestDx /= mag;
-            bestDy /= mag;
-        }
+        let currentBestDx = this._cachedIdealDx;
+        let currentBestDy = this._cachedIdealDy;
+
+        // --- OPTIMIERUNG 4: Wir können uns die Normalisierung von currentBestDx/Dy sparen,
+        // da sie von den Vektoren des Radars kommen und immer exakt Länge 1 haben! ---
 
         if (this.fleeDirX === undefined) {
-            this.fleeDirX = bestDx;
-            this.fleeDirY = bestDy;
+            this.fleeDirX = currentBestDx;
+            this.fleeDirY = currentBestDy;
         }
 
         // Sanfte Trägheit (Zittern verhindern)
-        this.fleeDirX = this.fleeDirX * 0.7 + bestDx * 0.3;
-        this.fleeDirY = this.fleeDirY * 0.7 + bestDy * 0.3;
+        this.fleeDirX = this.fleeDirX * 0.7 + currentBestDx * 0.3;
+        this.fleeDirY = this.fleeDirY * 0.7 + currentBestDy * 0.3;
 
+        // Nur der Trägheits-Vektor muss am Ende wieder gerichtet werden
         const finalMag = Math.sqrt(this.fleeDirX * this.fleeDirX + this.fleeDirY * this.fleeDirY);
         if (finalMag > 0) {
             this.fleeDirX /= finalMag;
             this.fleeDirY /= finalMag;
         }
 
-        // Zielpunkt tief in den Raum setzen
         const fleeTarget = {
             x: this.x + this.fleeDirX * 100,
             y: this.y + this.fleeDirY * 100
@@ -887,87 +922,109 @@ class AnimalCell extends BaseCell {
         this.target = null;
         this.targetTimer = 0;
 
-        let combinedFleeX = 0;
-        let combinedFleeY = 0;
-        let totalForce = 0; // NEU: Summe aller Ängste speichern
+        // --- OPTIMIERUNG 1: KI-Schlaf (Throttling) ---
+        if (this.fleeHerbTimer === undefined) {
+            this.fleeHerbTimer = Math.floor(Math.random() * 5); // Verhindert Ruckler!
+        }
+        this.fleeHerbTimer++;
 
-        let closestDistSq = Infinity;
-        let closestDx = 0;
-        let closestDy = 0;
+        // Berechne die komplexen Abstoßungs-Kräfte nur alle 5 Frames neu
+        if (this.fleeHerbTimer % 5 === 0 || this._cachedHerbDx === undefined) {
+            let combinedFleeX = 0;
+            let combinedFleeY = 0;
+            let totalForce = 0;
 
-        // 1. Alle Fluchtvektoren berechnen
-        for (const threat of threats) {
-            const dx = this.x - threat.x;
-            const dy = this.y - threat.y;
-            const distSq = dx * dx + dy * dy;
+            let closestDistSq = Infinity;
+            let closestDx = 0;
+            let closestDy = 0;
 
-            if (distSq > 0) {
-                const dist = Math.sqrt(distSq);
+            // Schnelle for-Schleife statt for...of
+            for (let i = 0; i < threats.length; i++) {
+                const threat = threats[i];
+                const dx = this.x - threat.x;
+                const dy = this.y - threat.y;
+                const distSq = dx * dx + dy * dy;
 
-                // Exponentielle Angst: Je näher, desto brutaler die Abstoßung
-                const force = 2000 / distSq;
+                if (distSq > 0) {
+                    const dist = Math.sqrt(distSq);
+                    const force = 2000 / distSq;
 
-                const fX = (dx / dist) * force;
-                const fY = (dy / dist) * force;
+                    const fX = (dx / dist) * force;
+                    const fY = (dy / dist) * force;
 
-                combinedFleeX += fX;
-                combinedFleeY += fY;
-                totalForce += force; // Gesamtdruck auf das Tier aufsummieren
+                    combinedFleeX += fX;
+                    combinedFleeY += fY;
+                    totalForce += force;
 
-                // Den gefährlichsten (nächsten) Räuber für den Notausweg merken
-                if (distSq < closestDistSq) {
-                    closestDistSq = distSq;
-                    closestDx = dx / dist;
-                    closestDy = dy / dist;
+                    if (distSq < closestDistSq) {
+                        closestDistSq = distSq;
+                        // --- OPTIMIERUNG 2: Faule Mathematik ---
+                        // Wir normalisieren hier noch NICHT. Das spart N-Divisionen!
+                        closestDx = dx;
+                        closestDy = dy;
+                    }
                 }
             }
-        }
 
-        // 3. Vektorlänge (Mag) der RESULTIERENDEN Fluchtrichtung berechnen
-        const mag = Math.sqrt(combinedFleeX * combinedFleeX + combinedFleeY * combinedFleeY);
+            const mag = Math.sqrt(combinedFleeX * combinedFleeX + combinedFleeY * combinedFleeY);
 
-        let idealDx = 0;
-        let idealDy = 0;
+            let idealDx = 0;
+            let idealDy = 0;
 
-        // --- DER "ZANGENANGRIFF" FIX (Nasse Seife) ---
-        // Wenn sich die Kräfte der Feinde (oder Wand + Feind) fast komplett aufheben:
-        // (Mag ist sehr klein, obwohl die TotalForce hoch ist)
-        if (mag < totalForce * 0.4 && closestDistSq !== Infinity) {
+            if (mag < totalForce * 0.4 && closestDistSq !== Infinity) {
+                // --- ZANGENANGRIFF FIX ---
+                // Erst JETZT, wo wir ihn wirklich brauchen, normalisieren wir den engsten Feind!
+                const cDist = Math.sqrt(closestDistSq);
+                const cNx = closestDx / cDist;
+                const cNy = closestDy / cDist;
 
-            // Wir stecken in der Falle! 90-Grad Ausbruchs-Winkel zum nächsten Feind berechnen
-            idealDx = -closestDy;
-            idealDy = closestDx;
+                idealDx = -cNy;
+                idealDy = cNx;
 
-            // Logik: Wir nehmen die 90-Grad-Seite, die unserer aktuellen Schwimmrichtung ähnlicher ist
-            if (this.fleeDirX !== undefined) {
-                if ((idealDx * this.fleeDirX + idealDy * this.fleeDirY) < 0) {
-                    idealDx = -idealDx; // Fluchtrichtung umdrehen
-                    idealDy = -idealDy;
+                if (this.fleeDirX !== undefined) {
+                    if ((idealDx * this.fleeDirX + idealDy * this.fleeDirY) < 0) {
+                        idealDx = -idealDx;
+                        idealDy = -idealDy;
+                    }
                 }
+            } else if (mag > 0) {
+                idealDx = combinedFleeX / mag;
+                idealDy = combinedFleeY / mag;
             }
-        } else if (mag > 0) {
-            // Normale, klare Fluchtrichtung (Kräfte heben sich nicht auf)
-            idealDx = combinedFleeX / mag;
-            idealDy = combinedFleeY / mag;
+
+            // GANZ WICHTIG: Ergebnis cachen!
+            this._cachedHerbDx = idealDx;
+            this._cachedHerbDy = idealDy;
         }
 
-        // --- DER "KREISLAUF & ZAPPEL" FIX ---
+        // ==========================================
+        // AB HIER GEHT ES JEDEN FRAME WEITER
+        // ==========================================
+
+        let currentBestDx = this._cachedHerbDx;
+        let currentBestDy = this._cachedHerbDy;
+
         if (this.fleeDirX === undefined) {
-            this.fleeDirX = idealDx;
-            this.fleeDirY = idealDy;
+            this.fleeDirX = currentBestDx;
+            this.fleeDirY = currentBestDy;
         }
 
-        // Trägheit auf 30% Anpassung gesetzt. Das filtert 1-Frame-Zittern komplett raus,
-        // macht die Tiere aber wendig genug, damit sie keine riesigen Schleifen schwimmen.
-        this.fleeDirX = this.fleeDirX * 0.7 + idealDx * 0.3;
-        this.fleeDirY = this.fleeDirY * 0.7 + idealDy * 0.3;
+        // Sanfte Trägheit
+        this.fleeDirX = this.fleeDirX * 0.7 + currentBestDx * 0.3;
+        this.fleeDirY = this.fleeDirY * 0.7 + currentBestDy * 0.3;
 
-        const idealFleeAngle = Math.atan2(this.fleeDirY, this.fleeDirX);
+        // --- OPTIMIERUNG 3: Die Trigonometrie-Falle entfernt ---
+        // Vektor einfach nur auf Länge 1 bringen (Normalisieren) statt atan2 -> cos/sin!
+        const finalMag = Math.sqrt(this.fleeDirX * this.fleeDirX + this.fleeDirY * this.fleeDirY);
+        if (finalMag > 0) {
+            this.fleeDirX /= finalMag;
+            this.fleeDirY /= finalMag;
+        }
 
-        // Fluchtziel tief in den Raum setzen, damit sie mit Vollgas schwimmen
+        // Direkt den normalisierten Vektor mit 100 strecken. Super schnell!
         const fleeTarget = {
-            x: this.x + Math.cos(idealFleeAngle) * 100,
-            y: this.y + Math.sin(idealFleeAngle) * 100
+            x: this.x + this.fleeDirX * 100,
+            y: this.y + this.fleeDirY * 100
         };
 
         this.currentFleeTarget = fleeTarget;

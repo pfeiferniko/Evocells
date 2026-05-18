@@ -9,12 +9,6 @@ class Grid {
         this.queryResult = [];
     }
 
-    _getIndex(x, y) {
-        const col = Math.floor(x / this.cellSize);
-        const row = Math.floor(y / this.cellSize);
-        if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return -1;
-        return col + row * this.cols;
-    }
 
     add(entity) {
         const index = this._getIndex(entity.x, entity.y);
@@ -29,29 +23,41 @@ class Grid {
         const cell = this.grid[entity._gridIndex];
         const i = cell.indexOf(entity);
         if (i !== -1) {
-            cell.splice(i, 1);
+            // --- OPTIMIERUNG: Swap and Pop statt splice() ---
+            const lastEntity = cell[cell.length - 1];
+            cell[i] = lastEntity; // Das letzte Element rutscht auf die Lücke
+            cell.pop();           // Das nun doppelte Ende wird blitzschnell abgeschnitten
         }
         entity._gridIndex = -1;
     }
 
-    // Result-Array wird geleert und wieder befüllt, statt neu erzeugt zu werden
-    getEntitiesInArea(x, y, radius) {
-        this.queryResult.length = 0; // Leert das Array blitzschnell ohne GC
+    _getIndex(x, y) {
+        // --- OPTIMIERUNG: Bitwise NOT statt Math.floor ---
+        const col = ~~(x / this.cellSize);
+        const row = ~~(y / this.cellSize);
+        if (col < 0 || col >= this.cols || row < 0 || row >= this.rows) return -1;
+        return col + row * this.cols;
+    }
 
-        const minCol = Math.max(0, Math.floor((x - radius) / this.cellSize));
-        const maxCol = Math.min(this.cols - 1, Math.floor((x + radius) / this.cellSize));
-        const minRow = Math.max(0, Math.floor((y - radius) / this.cellSize));
-        const maxRow = Math.min(this.rows - 1, Math.floor((y + radius) / this.cellSize));
+    getEntitiesInArea(x, y, radius) {
+        let resultCount = 0;
+
+        // --- OPTIMIERUNG: Bitwise NOT für rasend schnelle Berechnung ---
+        const minCol = Math.max(0, ~~((x - radius) / this.cellSize));
+        const maxCol = Math.min(this.cols - 1, ~~((x + radius) / this.cellSize));
+        const minRow = Math.max(0, ~~((y - radius) / this.cellSize));
+        const maxRow = Math.min(this.rows - 1, ~~((y + radius) / this.cellSize));
 
         for (let col = minCol; col <= maxCol; col++) {
             for (let row = minRow; row <= maxRow; row++) {
                 const index = col + row * this.cols;
                 const cell = this.grid[index];
                 for (let i = 0; i < cell.length; i++) {
-                    this.queryResult.push(cell[i]);
+                    this.queryResult[resultCount++] = cell[i];
                 }
             }
         }
+        this.queryResult.length = resultCount;
         return this.queryResult;
     }
 

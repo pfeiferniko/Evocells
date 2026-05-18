@@ -282,6 +282,26 @@ function draw2D() {
         }
     });
 
+    if (showDebugLines) {
+        // --- NEU: Ranken (Linien) zwischen den Pflanzen zeichnen ---
+        ctx.save();
+        ctx.strokeStyle = '#ffffff'; // Ein tiefes, natürliches Waldgrün
+        ctx.lineWidth = 2;
+        ctx.lineCap = 'round';
+
+        // Performance: Nur ein einziger Zeichenpfad für alle Ranken der Welt
+        ctx.beginPath();
+        entities.forEach(e => {
+            // Nur zeichnen, wenn das Segment einen lebenden Vorgänger hat
+            if (e.type === 'plant' && e.prev && e.prev.alive) {
+                ctx.moveTo(e.x, e.y);
+                ctx.lineTo(e.prev.x, e.prev.y);
+            }
+        });
+        ctx.stroke();
+        ctx.restore();
+    }
+
     // 3. Durchlauf: Fress-Krümel zeichnen (ganz im Vordergrund)
     particles.forEach(p => {
         //ctx.globalAlpha = p.life;
